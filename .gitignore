@@ -116,3 +116,5 @@ failsafe-reports/
 *~
 .cache/
 node_modules/
+
+*graphify*
