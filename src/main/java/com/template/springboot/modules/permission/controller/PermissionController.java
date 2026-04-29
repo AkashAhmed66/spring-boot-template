@@ -2,6 +2,7 @@ package com.template.springboot.modules.permission.controller;
 
 import com.template.springboot.common.dto.ApiResponse;
 import com.template.springboot.common.security.HasPermission;
+import com.template.springboot.modules.audit.annotation.Auditable;
 import com.template.springboot.modules.permission.dto.PermissionFilter;
 import com.template.springboot.modules.permission.dto.PermissionRequest;
 import com.template.springboot.modules.permission.enums.PermissionName;
@@ -31,6 +32,7 @@ public class PermissionController {
 
     @PostMapping
     @HasPermission(PermissionName.PERMISSION_WRITE)
+    @Auditable(action = "PERMISSION_CREATE", resourceType = "Permission")
     public ApiResponse create(@Valid @RequestBody PermissionRequest request) {
         return ApiResponse.created(permissionService.create(request));
     }
@@ -50,12 +52,14 @@ public class PermissionController {
 
     @PutMapping("/{id}")
     @HasPermission(PermissionName.PERMISSION_WRITE)
+    @Auditable(action = "PERMISSION_UPDATE", resourceType = "Permission", resourceId = "#id")
     public ApiResponse update(@PathVariable Long id, @Valid @RequestBody PermissionRequest request) {
         return new ApiResponse(permissionService.update(id, request), "Permission updated");
     }
 
     @DeleteMapping("/{id}")
     @HasPermission(PermissionName.PERMISSION_WRITE)
+    @Auditable(action = "PERMISSION_DELETE", resourceType = "Permission", resourceId = "#id")
     public ApiResponse delete(@PathVariable Long id) {
         permissionService.delete(id);
         return ApiResponse.message("Permission deleted");

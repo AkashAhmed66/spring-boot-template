@@ -1,6 +1,7 @@
 package com.template.springboot.modules.auth.controller;
 
 import com.template.springboot.common.dto.ApiResponse;
+import com.template.springboot.modules.audit.annotation.Auditable;
 import com.template.springboot.modules.auth.dto.LoginRequest;
 import com.template.springboot.modules.auth.dto.RefreshRequest;
 import com.template.springboot.modules.auth.dto.RegisterRequest;
@@ -22,16 +23,19 @@ public class AuthController {
     private final AuthService authService;
 
     @PostMapping("/register")
+    @Auditable(action = "AUTH_REGISTER", resourceType = "User", resourceId = "#request.username")
     public ApiResponse register(@Valid @RequestBody RegisterRequest request) {
         return ApiResponse.created(authService.register(request));
     }
 
     @PostMapping("/login")
+    @Auditable(action = "AUTH_LOGIN", resourceType = "User", resourceId = "#request.username")
     public ApiResponse login(@Valid @RequestBody LoginRequest request) {
         return new ApiResponse(authService.login(request), "Login successful");
     }
 
     @PostMapping("/refresh")
+    @Auditable(action = "AUTH_REFRESH", resourceType = "User")
     public ApiResponse refresh(@Valid @RequestBody RefreshRequest request) {
         return new ApiResponse(authService.refresh(request), "Token refreshed");
     }

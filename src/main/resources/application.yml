@@ -44,6 +44,33 @@ app:
       issuer: springboot-template
       access-token-ttl-minutes: 60
       refresh-token-ttl-days: 14
+  audit:
+    # Master switch: false disables capture, the @Auditable aspect, the async executor, and the read API.
+    enabled: ${APP_AUDIT_ENABLED:true}
+    # Independent toggle: keeps capture on while hiding GET /api/v1/audit-logs (set false to lock down the read API).
+    expose-api: ${APP_AUDIT_EXPOSE_API:true}
+    audit-all: true
+    capture-request-body: true
+    capture-response-body: true
+    max-body-length: 10000
+    include-path-prefixes:
+      - /api/
+    exclude-path-patterns:
+      - /actuator/.*
+      - .*/swagger-ui.*
+      - /v3/api-docs.*
+      - /api/v1/files/.*
+    masked-fields:
+      - password
+      - passwordHash
+      - currentPassword
+      - newPassword
+      - token
+      - accessToken
+      - refreshToken
+      - secret
+      - apiKey
+      - authorization
 
 logging:
   file:

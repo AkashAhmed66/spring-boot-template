@@ -2,6 +2,7 @@ package com.template.springboot.modules.product.controller;
 
 import com.template.springboot.common.dto.ApiResponse;
 import com.template.springboot.common.security.HasPermission;
+import com.template.springboot.modules.audit.annotation.Auditable;
 import com.template.springboot.modules.permission.enums.PermissionName;
 import com.template.springboot.modules.product.dto.ProductFilter;
 import com.template.springboot.modules.product.dto.ProductRequest;
@@ -36,6 +37,7 @@ public class ProductController {
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @HasPermission(PermissionName.PRODUCT_WRITE)
+    @Auditable(action = "PRODUCT_CREATE", resourceType = "Product")
     public ApiResponse create(@Valid @RequestPart("data") ProductRequest request,
                               @RequestPart(value = "image", required = false) MultipartFile image) {
         return ApiResponse.created(productService.create(request, image));
@@ -60,6 +62,7 @@ public class ProductController {
 
     @PutMapping(value = "/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @HasPermission(PermissionName.PRODUCT_WRITE)
+    @Auditable(action = "PRODUCT_UPDATE", resourceType = "Product", resourceId = "#id")
     public ApiResponse update(@PathVariable Long id,
                               @Valid @RequestPart("data") ProductRequest request,
                               @RequestPart(value = "image", required = false) MultipartFile image) {
@@ -68,6 +71,7 @@ public class ProductController {
 
     @DeleteMapping("/{id}")
     @HasPermission(PermissionName.PRODUCT_DELETE)
+    @Auditable(action = "PRODUCT_DELETE", resourceType = "Product", resourceId = "#id")
     public ApiResponse delete(@PathVariable Long id) {
         productService.delete(id);
         return ApiResponse.message("Deleted");

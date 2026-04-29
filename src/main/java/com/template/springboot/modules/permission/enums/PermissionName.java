@@ -18,4 +18,6 @@ public final class PermissionName {
     public static final String PRODUCT_READ   = "PRODUCT_READ";
     public static final String PRODUCT_WRITE  = "PRODUCT_WRITE";
     public static final String PRODUCT_DELETE = "PRODUCT_DELETE";
+
+    public static final String AUDIT_READ = "AUDIT_READ";
 }

@@ -2,6 +2,7 @@ package com.template.springboot.modules.role.controller;
 
 import com.template.springboot.common.dto.ApiResponse;
 import com.template.springboot.common.security.HasPermission;
+import com.template.springboot.modules.audit.annotation.Auditable;
 import com.template.springboot.modules.permission.enums.PermissionName;
 import com.template.springboot.modules.role.dto.AssignPermissionsRequest;
 import com.template.springboot.modules.role.dto.RoleFilter;
@@ -32,6 +33,7 @@ public class RoleController {
 
     @PostMapping
     @HasPermission(PermissionName.ROLE_WRITE)
+    @Auditable(action = "ROLE_CREATE", resourceType = "Role")
     public ApiResponse create(@Valid @RequestBody RoleRequest request) {
         return ApiResponse.created(roleService.create(request));
     }
@@ -51,12 +53,14 @@ public class RoleController {
 
     @PutMapping("/{id}")
     @HasPermission(PermissionName.ROLE_WRITE)
+    @Auditable(action = "ROLE_UPDATE", resourceType = "Role", resourceId = "#id")
     public ApiResponse update(@PathVariable Long id, @Valid @RequestBody RoleRequest request) {
         return new ApiResponse(roleService.update(id, request), "Role updated");
     }
 
     @PostMapping("/{id}/permissions")
     @HasPermission(PermissionName.ROLE_WRITE)
+    @Auditable(action = "ROLE_ASSIGN_PERMISSIONS", resourceType = "Role", resourceId = "#id")
     public ApiResponse assignPermissions(@PathVariable Long id,
                                          @Valid @RequestBody AssignPermissionsRequest request) {
         return new ApiResponse(roleService.assignPermissions(id, request), "Permissions assigned");
@@ -64,6 +68,7 @@ public class RoleController {
 
     @DeleteMapping("/{id}")
     @HasPermission(PermissionName.ROLE_DELETE)
+    @Auditable(action = "ROLE_DELETE", resourceType = "Role", resourceId = "#id")
     public ApiResponse delete(@PathVariable Long id) {
         roleService.delete(id);
         return ApiResponse.message("Role deleted");

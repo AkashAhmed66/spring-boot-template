@@ -2,6 +2,7 @@ package com.template.springboot.modules.user.controller;
 
 import com.template.springboot.common.dto.ApiResponse;
 import com.template.springboot.common.security.HasPermission;
+import com.template.springboot.modules.audit.annotation.Auditable;
 import com.template.springboot.modules.permission.enums.PermissionName;
 import com.template.springboot.modules.user.dto.AssignRolesRequest;
 import com.template.springboot.modules.user.dto.UpdateUserRequest;
@@ -55,18 +56,21 @@ public class UserController {
 
     @PutMapping("/{id}")
     @HasPermission(PermissionName.USER_WRITE)
+    @Auditable(action = "USER_UPDATE", resourceType = "User", resourceId = "#id")
     public ApiResponse update(@PathVariable Long id, @Valid @RequestBody UpdateUserRequest request) {
         return new ApiResponse(userService.update(id, request), "User updated");
     }
 
     @PostMapping("/{id}/roles")
     @HasPermission(PermissionName.ROLE_WRITE)
+    @Auditable(action = "USER_ASSIGN_ROLES", resourceType = "User", resourceId = "#id")
     public ApiResponse assignRoles(@PathVariable Long id, @Valid @RequestBody AssignRolesRequest request) {
         return new ApiResponse(userService.assignRoles(id, request), "Roles assigned");
     }
 
     @DeleteMapping("/{id}")
     @HasPermission(PermissionName.USER_DELETE)
+    @Auditable(action = "USER_DELETE", resourceType = "User", resourceId = "#id")
     public ApiResponse delete(@PathVariable Long id) {
         userService.delete(id);
         return ApiResponse.message("User deleted");
