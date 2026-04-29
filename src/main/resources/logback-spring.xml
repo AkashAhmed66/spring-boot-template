@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+    <springProperty name="LOG_DIR"  source="logging.file.path" defaultValue="logs"/>
+    <springProperty name="APP_NAME" source="spring.application.name" defaultValue="app"/>
+
+    <property name="FILE_PATTERN"
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %X{requestId:-} %X{username:-} %logger{40} - %msg%n"/>
+    <property name="MAX_HISTORY" value="3"/>
+    <property name="TOTAL_SIZE_CAP" value="500MB"/>
+
+    <!-- ============================================================
+         All application logs (INFO+) — full picture
+         ============================================================ -->
+    <appender name="APP_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/${APP_NAME}.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/archived/${APP_NAME}-%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>50MB</maxFileSize>
+            <maxHistory>${MAX_HISTORY}</maxHistory>
+            <totalSizeCap>${TOTAL_SIZE_CAP}</totalSizeCap>
+            <cleanHistoryOnStart>true</cleanHistoryOnStart>
+        </rollingPolicy>
+        <encoder>
+            <pattern>${FILE_PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <!-- ============================================================
+         Errors only (WARN+) — fast triage file
+         ============================================================ -->
+    <appender name="ERROR_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/error.log</file>
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>WARN</level>
+        </filter>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/archived/error-%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>50MB</maxFileSize>
+            <maxHistory>${MAX_HISTORY}</maxHistory>
+            <totalSizeCap>${TOTAL_SIZE_CAP}</totalSizeCap>
+            <cleanHistoryOnStart>true</cleanHistoryOnStart>
+        </rollingPolicy>
+        <encoder>
+            <pattern>${FILE_PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <!-- ============================================================
+         Security events — auth, authorization, JWT
+         ============================================================ -->
+    <appender name="SECURITY_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/security.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/archived/security-%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>50MB</maxFileSize>
+            <maxHistory>${MAX_HISTORY}</maxHistory>
+            <totalSizeCap>${TOTAL_SIZE_CAP}</totalSizeCap>
+            <cleanHistoryOnStart>true</cleanHistoryOnStart>
+        </rollingPolicy>
+        <encoder>
+            <pattern>${FILE_PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <!-- ============================================================
+         SQL — Hibernate statements + bound parameters
+         ============================================================ -->
+    <appender name="SQL_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/sql.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/archived/sql-%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>50MB</maxFileSize>
+            <maxHistory>${MAX_HISTORY}</maxHistory>
+            <totalSizeCap>${TOTAL_SIZE_CAP}</totalSizeCap>
+            <cleanHistoryOnStart>true</cleanHistoryOnStart>
+        </rollingPolicy>
+        <encoder>
+            <pattern>${FILE_PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <!-- ============================================================
+         Loggers
+         ============================================================ -->
+
+    <!-- Security: Spring Security + your filters/aspect/handlers -->
+    <logger name="org.springframework.security" level="INFO" additivity="false">
+        <appender-ref ref="SECURITY_FILE"/>
+        <appender-ref ref="CONSOLE"/>
+    </logger>
+    <logger name="com.template.springboot.common.security" level="DEBUG" additivity="false">
+        <appender-ref ref="SECURITY_FILE"/>
+        <appender-ref ref="CONSOLE"/>
+    </logger>
+
+    <!-- SQL: Hibernate -->
+    <logger name="org.hibernate.SQL" level="DEBUG" additivity="false">
+        <appender-ref ref="SQL_FILE"/>
+    </logger>
+    <logger name="org.hibernate.orm.jdbc.bind" level="TRACE" additivity="false">
+        <appender-ref ref="SQL_FILE"/>
+    </logger>
+
+    <!-- Your application code -->
+    <logger name="com.template.springboot" level="DEBUG"/>
+
+    <!-- Quiet down framework noise -->
+    <logger name="org.springframework" level="INFO"/>
+    <logger name="org.apache" level="WARN"/>
+    <logger name="com.zaxxer.hikari" level="INFO"/>
+
+    <!-- Root: console + app file + error file -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="APP_FILE"/>
+        <appender-ref ref="ERROR_FILE"/>
+    </root>
+
+</configuration>

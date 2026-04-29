@@ -1,0 +1,118 @@
+### Maven ###
+target/
+!**/src/main/**/target/
+!**/src/test/**/target/
+.mvn/wrapper/maven-wrapper.jar
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+
+### Gradle ###
+.gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+gradle-app.setting
+!gradle-wrapper.jar
+.gradletasknamecache
+
+### Java ###
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+hs_err_pid*
+replay_pid*
+*.log.gz
+
+### Logs (Logback rolling output) ###
+logs/
+*.log
+*.log.*
+
+### Uploaded files ###
+uploads/
+
+### Spring Boot runtime ###
+spring-boot-*.log
+springboot-*.log
+
+### Environment / secrets — NEVER commit ###
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.key
+secrets/
+application-local.yml
+application-local.yaml
+application-local.properties
+application-secrets.yml
+application-secrets.yaml
+application-secrets.properties
+
+### OS junk ###
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+### IntelliJ IDEA ###
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+
+### Eclipse / STS ###
+.apt_generated/
+.apt_generated_test/
+.classpath
+.factorypath
+.project
+.settings/
+.springBeans
+.sts4-cache/
+
+### VS Code ###
+.vscode/
+*.code-workspace
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+### Generated docs / boilerplate ###
+HELP.md
+
+### Test reports & coverage ###
+*.ctxt
+.cobertura/
+jacoco.exec
+coverage/
+surefire-reports/
+failsafe-reports/
+
+### OS / tooling caches ###
+*.swp
+*.swo
+*~
+.cache/
+node_modules/
