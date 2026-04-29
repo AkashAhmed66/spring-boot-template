@@ -354,7 +354,14 @@ Query string: `?page=0&size=20&sort=createdAt,desc`
 Every entity extending `BaseEntity` gets:
 - `createdAt`, `updatedAt` — Hibernate timestamps
 - `createdBy`, `updatedBy` — username from `SecurityContext` (or `"system"`)
+- `deletedAt`, `deletedBy` — populated when soft-deleted
 - `version` — optimistic locking
+
+### Soft delete — automatic
+- Every entity with `BaseEntity` carries `deleted_at` / `deleted_by`. The `@SQLRestriction("deleted_at IS NULL")` annotation on each `@Entity` class makes Hibernate append the filter to **every** query (including `findById`, `findAll`, joins, fetched collections, `existsBy*`, Specifications), so soft-deleted rows are invisible to the application by default.
+- Service `delete(...)` methods call `entity.markDeleted(SecurityUtils.getCurrentUsername())` and `repo.save(entity)` — never `repo.deleteById(...)`. That records who deleted it and when.
+- To restore: load via a native query (since `findById` won't see it), call `entity.restore()`, save.
+- DB-level `UNIQUE` constraints on natural keys (`username`, `email`, `sku`, etc.) still apply across both live and soft-deleted rows. If you need to allow re-using a key after deletion, change the schema to a partial / composite unique constraint per use case.
 
 ### Filtering — JPA Specifications
 Each `*Specifications` class composes predicates from a filter DTO. The repository extends `JpaSpecificationExecutor`, so the service just calls `repository.findAll(spec, pageable)`. See [ProductSpecifications.java](src/main/java/com/template/springboot/modules/product/specification/ProductSpecifications.java).

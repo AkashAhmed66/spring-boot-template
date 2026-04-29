@@ -2,6 +2,7 @@ package com.template.springboot.modules.product.serviceImpl;
 
 import com.template.springboot.common.exception.DuplicateResourceException;
 import com.template.springboot.common.exception.ResourceNotFoundException;
+import com.template.springboot.common.security.SecurityUtils;
 import com.template.springboot.modules.file.dto.FileUploadResponse;
 import com.template.springboot.modules.file.service.FileStorageService;
 import com.template.springboot.modules.product.dto.ProductFilter;
@@ -82,10 +83,10 @@ public class ProductServiceImpl implements ProductService {
     @Override
     @Transactional
     public void delete(Long id) {
-        if (!productRepository.existsById(id)) {
-            throw new ResourceNotFoundException("Product", id);
-        }
-        productRepository.deleteById(id);
-        log.warn("Product deleted id={}", id);
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Product", id));
+        product.markDeleted(SecurityUtils.getCurrentUsername().orElse("system"));
+        productRepository.save(product);
+        log.warn("Product soft-deleted id={}", id);
     }
 }

@@ -14,6 +14,7 @@ import jakarta.persistence.UniqueConstraint;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.SQLRestriction;
 
 import java.math.BigDecimal;
 import java.util.Objects;
@@ -24,6 +25,7 @@ import java.util.Objects;
 @Getter
 @Setter
 @NoArgsConstructor
+@SQLRestriction("deleted_at IS NULL")
 public class Product extends BaseEntity {
 
     @Id

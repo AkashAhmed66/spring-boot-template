@@ -36,7 +36,27 @@ public abstract class BaseEntity {
     @Column(name = "updated_by", length = 100)
     private String updatedBy;
 
+    @Column(name = "deleted_at")
+    private Instant deletedAt;
+
+    @Column(name = "deleted_by", length = 100)
+    private String deletedBy;
+
     @Version
     @Column(name = "version", nullable = false)
     private Long version;
+
+    public boolean isDeleted() {
+        return deletedAt != null;
+    }
+
+    public void markDeleted(String by) {
+        this.deletedAt = Instant.now();
+        this.deletedBy = by;
+    }
+
+    public void restore() {
+        this.deletedAt = null;
+        this.deletedBy = null;
+    }
 }

@@ -2,6 +2,7 @@ package com.template.springboot.modules.permission.serviceImpl;
 
 import com.template.springboot.common.exception.DuplicateResourceException;
 import com.template.springboot.common.exception.ResourceNotFoundException;
+import com.template.springboot.common.security.SecurityUtils;
 import com.template.springboot.modules.permission.dto.PermissionFilter;
 import com.template.springboot.modules.permission.dto.PermissionRequest;
 import com.template.springboot.modules.permission.dto.PermissionResponse;
@@ -68,10 +69,10 @@ public class PermissionServiceImpl implements PermissionService {
     @Override
     @Transactional
     public void delete(Long id) {
-        if (!permissionRepository.existsById(id)) {
-            throw new ResourceNotFoundException("Permission", id);
-        }
-        permissionRepository.deleteById(id);
-        log.warn("Permission deleted id={}", id);
+        Permission permission = permissionRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Permission", id));
+        permission.markDeleted(SecurityUtils.getCurrentUsername().orElse("system"));
+        permissionRepository.save(permission);
+        log.warn("Permission soft-deleted id={}", id);
     }
 }

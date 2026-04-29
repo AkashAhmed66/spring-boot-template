@@ -2,6 +2,7 @@ package com.template.springboot.modules.role.serviceImpl;
 
 import com.template.springboot.common.exception.DuplicateResourceException;
 import com.template.springboot.common.exception.ResourceNotFoundException;
+import com.template.springboot.common.security.SecurityUtils;
 import com.template.springboot.modules.permission.entity.Permission;
 import com.template.springboot.modules.permission.repository.PermissionRepository;
 import com.template.springboot.modules.role.dto.AssignPermissionsRequest;
@@ -93,11 +94,11 @@ public class RoleServiceImpl implements RoleService {
     @Override
     @Transactional
     public void delete(Long id) {
-        if (!roleRepository.existsById(id)) {
-            throw new ResourceNotFoundException("Role", id);
-        }
-        roleRepository.deleteById(id);
-        log.warn("Role deleted id={}", id);
+        Role role = roleRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Role", id));
+        role.markDeleted(SecurityUtils.getCurrentUsername().orElse("system"));
+        roleRepository.save(role);
+        log.warn("Role soft-deleted id={}", id);
     }
 
     private Set<Permission> resolvePermissions(Set<String> names) {
