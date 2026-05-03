@@ -22,6 +22,6 @@ public class ProductMapper {
     }
 
     public ProductResponse toResponse(Product product) {
-        return ProductResponse.from(product);
+        return modelMapper.map(product, ProductResponse.class);
     }
 }

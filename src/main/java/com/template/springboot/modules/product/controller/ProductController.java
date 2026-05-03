@@ -1,6 +1,7 @@
 package com.template.springboot.modules.product.controller;
 
 import com.template.springboot.common.dto.ApiResponse;
+import com.template.springboot.common.security.CurrentUserService;
 import com.template.springboot.common.security.HasPermission;
 import com.template.springboot.modules.audit.annotation.Auditable;
 import com.template.springboot.modules.permission.enums.PermissionName;
@@ -34,12 +35,18 @@ import java.math.BigDecimal;
 public class ProductController {
 
     private final ProductService productService;
+    private final CurrentUserService currentUserService;
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @HasPermission(PermissionName.PRODUCT_WRITE)
     @Auditable(action = "PRODUCT_CREATE", resourceType = "Product")
     public ApiResponse create(@Valid @RequestPart("data") ProductRequest request,
                               @RequestPart(value = "image", required = false) MultipartFile image) {
+        var me = currentUserService.get();
+        System.out.println("Current user => id=" + me.getId()
+                + ", username=" + me.getUsername()
+                + ", email=" + me.getEmail()
+                + ", authorities=" + currentUserService.getAuthorities());
         return ApiResponse.created(productService.create(request, image));
     }
 

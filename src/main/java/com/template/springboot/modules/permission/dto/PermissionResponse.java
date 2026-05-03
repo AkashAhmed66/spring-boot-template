@@ -1,22 +1,18 @@
 package com.template.springboot.modules.permission.dto;
 
-import com.template.springboot.modules.permission.entity.Permission;
+import com.template.springboot.common.dto.BaseResponse;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
-import java.time.Instant;
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+public class PermissionResponse extends BaseResponse {
 
-public record PermissionResponse(
-        Long id,
-        String name,
-        String description,
-        Instant createdAt,
-        Instant updatedAt,
-        String createdBy,
-        String updatedBy) {
-
-    public static PermissionResponse from(Permission p) {
-        return new PermissionResponse(
-                p.getId(), p.getName(), p.getDescription(),
-                p.getCreatedAt(), p.getUpdatedAt(),
-                p.getCreatedBy(), p.getUpdatedBy());
-    }
+    private Long id;
+    private String name;
+    private String description;
 }

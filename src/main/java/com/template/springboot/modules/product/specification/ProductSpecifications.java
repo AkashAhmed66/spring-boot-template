@@ -12,20 +12,20 @@ public final class ProductSpecifications {
         Specification<Product> spec = Specification.allOf();
         if (filter == null) return spec;
 
-        if (filter.q() != null && !filter.q().isBlank()) {
-            String like = "%" + filter.q().toLowerCase() + "%";
+        if (filter.getQ() != null && !filter.getQ().isBlank()) {
+            String like = "%" + filter.getQ().toLowerCase() + "%";
             spec = spec.and((root, q, cb) -> cb.or(
                     cb.like(cb.lower(root.get("sku")),  like),
                     cb.like(cb.lower(root.get("name")), like)));
         }
-        if (filter.status() != null) {
-            spec = spec.and((root, q, cb) -> cb.equal(root.get("status"), filter.status()));
+        if (filter.getStatus() != null) {
+            spec = spec.and((root, q, cb) -> cb.equal(root.get("status"), filter.getStatus()));
         }
-        if (filter.minPrice() != null) {
-            spec = spec.and((root, q, cb) -> cb.greaterThanOrEqualTo(root.get("price"), filter.minPrice()));
+        if (filter.getMinPrice() != null) {
+            spec = spec.and((root, q, cb) -> cb.greaterThanOrEqualTo(root.get("price"), filter.getMinPrice()));
         }
-        if (filter.maxPrice() != null) {
-            spec = spec.and((root, q, cb) -> cb.lessThanOrEqualTo(root.get("price"), filter.maxPrice()));
+        if (filter.getMaxPrice() != null) {
+            spec = spec.and((root, q, cb) -> cb.lessThanOrEqualTo(root.get("price"), filter.getMaxPrice()));
         }
         return spec;
     }

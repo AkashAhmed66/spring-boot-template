@@ -12,8 +12,8 @@ public final class PermissionSpecifications {
         Specification<Permission> spec = Specification.allOf();
         if (filter == null) return spec;
 
-        if (filter.q() != null && !filter.q().isBlank()) {
-            String like = "%" + filter.q().toLowerCase() + "%";
+        if (filter.getQ() != null && !filter.getQ().isBlank()) {
+            String like = "%" + filter.getQ().toLowerCase() + "%";
             spec = spec.and((root, q, cb) -> cb.or(
                     cb.like(cb.lower(root.get("name")), like),
                     cb.like(cb.lower(cb.coalesce(root.get("description"), "")), like)));

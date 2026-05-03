@@ -1,4 +1,15 @@
 package com.template.springboot.modules.permission.dto;
 
-public record PermissionFilter(String q) {
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+public class PermissionFilter {
+
+    private String q;
 }

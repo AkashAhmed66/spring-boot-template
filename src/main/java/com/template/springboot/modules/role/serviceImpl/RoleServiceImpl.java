@@ -37,13 +37,13 @@ public class RoleServiceImpl implements RoleService {
     @Override
     @Transactional
     public RoleResponse create(RoleRequest request) {
-        if (roleRepository.existsByName(request.name())) {
-            throw new DuplicateResourceException("Role already exists: " + request.name());
+        if (roleRepository.existsByName(request.getName())) {
+            throw new DuplicateResourceException("Role already exists: " + request.getName());
         }
         Role role = new Role();
-        role.setName(request.name());
-        role.setDescription(request.description());
-        role.setPermissions(resolvePermissions(request.permissions()));
+        role.setName(request.getName());
+        role.setDescription(request.getDescription());
+        role.setPermissions(resolvePermissions(request.getPermissions()));
         Role saved = roleRepository.save(role);
         log.info("Role created id={} name={} permissions={}", saved.getId(), saved.getName(), saved.getPermissions().size());
         return roleMapper.toResponse(saved);
@@ -54,15 +54,15 @@ public class RoleServiceImpl implements RoleService {
     public RoleResponse update(Long id, RoleRequest request) {
         Role role = roleRepository.findWithPermissionsById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Role", id));
-        if (!role.getName().equals(request.name()) && roleRepository.existsByName(request.name())) {
-            throw new DuplicateResourceException("Role already exists: " + request.name());
+        if (!role.getName().equals(request.getName()) && roleRepository.existsByName(request.getName())) {
+            throw new DuplicateResourceException("Role already exists: " + request.getName());
         }
-        role.setName(request.name());
-        role.setDescription(request.description());
-        if (request.permissions() != null) {
-            role.setPermissions(resolvePermissions(request.permissions()));
+        role.setName(request.getName());
+        role.setDescription(request.getDescription());
+        if (request.getPermissions() != null) {
+            role.setPermissions(resolvePermissions(request.getPermissions()));
         }
-        log.info("Role updated id={} name={}", id, request.name());
+        log.info("Role updated id={} name={}", id, request.getName());
         return roleMapper.toResponse(role);
     }
 
@@ -86,7 +86,7 @@ public class RoleServiceImpl implements RoleService {
     public RoleResponse assignPermissions(Long id, AssignPermissionsRequest request) {
         Role role = roleRepository.findWithPermissionsById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Role", id));
-        role.setPermissions(resolvePermissions(request.permissions()));
+        role.setPermissions(resolvePermissions(request.getPermissions()));
         log.info("Role {} permissions reassigned ({})", role.getName(), role.getPermissions().size());
         return roleMapper.toResponse(role);
     }

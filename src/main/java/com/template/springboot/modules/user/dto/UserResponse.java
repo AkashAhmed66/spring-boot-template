@@ -1,37 +1,24 @@
 package com.template.springboot.modules.user.dto;
 
-import com.template.springboot.modules.role.entity.Role;
-import com.template.springboot.modules.user.entity.User;
+import com.template.springboot.common.dto.BaseResponse;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
-import java.time.Instant;
 import java.util.Set;
-import java.util.stream.Collectors;
 
-public record UserResponse(
-        Long id,
-        String username,
-        String email,
-        String firstName,
-        String lastName,
-        boolean enabled,
-        Set<String> roles,
-        Instant createdAt,
-        Instant updatedAt,
-        String createdBy,
-        String updatedBy) {
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+public class UserResponse extends BaseResponse {
 
-    public static UserResponse from(User u) {
-        return new UserResponse(
-                u.getId(),
-                u.getUsername(),
-                u.getEmail(),
-                u.getFirstName(),
-                u.getLastName(),
-                u.isEnabled(),
-                u.getRoles().stream().map(Role::getName).collect(Collectors.toSet()),
-                u.getCreatedAt(),
-                u.getUpdatedAt(),
-                u.getCreatedBy(),
-                u.getUpdatedBy());
-    }
+    private Long id;
+    private String username;
+    private String email;
+    private String firstName;
+    private String lastName;
+    private boolean enabled;
+    private Set<String> roles;
 }

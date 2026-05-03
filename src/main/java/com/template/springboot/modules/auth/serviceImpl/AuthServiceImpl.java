@@ -40,21 +40,21 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public AuthResponse register(RegisterRequest request) {
-        if (userRepository.existsByUsername(request.username())) {
+        if (userRepository.existsByUsername(request.getUsername())) {
             throw new DuplicateResourceException("Username is already taken");
         }
-        if (userRepository.existsByEmail(request.email())) {
+        if (userRepository.existsByEmail(request.getEmail())) {
             throw new DuplicateResourceException("Email is already in use");
         }
         Role defaultRole = roleRepository.findByName(RoleName.USER)
                 .orElseThrow(() -> new ResourceNotFoundException("Default role missing: " + RoleName.USER));
 
         User user = new User();
-        user.setUsername(request.username());
-        user.setEmail(request.email());
-        user.setPasswordHash(passwordEncoder.encode(request.password()));
-        user.setFirstName(request.firstName());
-        user.setLastName(request.lastName());
+        user.setUsername(request.getUsername());
+        user.setEmail(request.getEmail());
+        user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
+        user.setFirstName(request.getFirstName());
+        user.setLastName(request.getLastName());
         user.setEnabled(true);
         user.getRoles().add(defaultRole);
         userRepository.save(user);
@@ -66,7 +66,7 @@ public class AuthServiceImpl implements AuthService {
     @Transactional(readOnly = true)
     public AuthResponse login(LoginRequest request) {
         Authentication auth = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(request.usernameOrEmail(), request.password()));
+                new UsernamePasswordAuthenticationToken(request.getUsernameOrEmail(), request.getPassword()));
         return buildResponse((CustomUserDetails) auth.getPrincipal());
     }
 
@@ -75,7 +75,7 @@ public class AuthServiceImpl implements AuthService {
     public AuthResponse refresh(RefreshRequest request) {
         Claims claims;
         try {
-            claims = jwtService.parse(request.refreshToken());
+            claims = jwtService.parse(request.getRefreshToken());
         } catch (JwtException ex) {
             throw new BadRequestException("Invalid refresh token");
         }

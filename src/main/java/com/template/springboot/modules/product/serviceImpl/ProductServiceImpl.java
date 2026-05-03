@@ -35,13 +35,13 @@ public class ProductServiceImpl implements ProductService {
     @Override
     @Transactional
     public ProductResponse create(ProductRequest request, MultipartFile image) {
-        if (productRepository.existsBySku(request.sku())) {
-            throw new DuplicateResourceException("SKU already exists: " + request.sku());
+        if (productRepository.existsBySku(request.getSku())) {
+            throw new DuplicateResourceException("SKU already exists: " + request.getSku());
         }
         Product product = productMapper.toEntity(request);
         if (image != null && !image.isEmpty()) {
             FileUploadResponse uploaded = fileStorageService.save(image, PRODUCT_IMAGE_SUBFOLDER);
-            product.setImageUrl(uploaded.url());
+            product.setImageUrl(uploaded.getUrl());
         }
         Product saved = productRepository.save(product);
         log.info("Product created id={} sku={}", saved.getId(), saved.getSku());
@@ -53,13 +53,13 @@ public class ProductServiceImpl implements ProductService {
     public ProductResponse update(Long id, ProductRequest request, MultipartFile image) {
         Product product = productRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Product", id));
-        if (!product.getSku().equals(request.sku()) && productRepository.existsBySku(request.sku())) {
-            throw new DuplicateResourceException("SKU already exists: " + request.sku());
+        if (!product.getSku().equals(request.getSku()) && productRepository.existsBySku(request.getSku())) {
+            throw new DuplicateResourceException("SKU already exists: " + request.getSku());
         }
         productMapper.applyUpdate(request, product);
         if (image != null && !image.isEmpty()) {
             FileUploadResponse uploaded = fileStorageService.save(image, PRODUCT_IMAGE_SUBFOLDER);
-            product.setImageUrl(uploaded.url());
+            product.setImageUrl(uploaded.getUrl());
         }
         log.info("Product updated id={}", id);
         return productMapper.toResponse(product);

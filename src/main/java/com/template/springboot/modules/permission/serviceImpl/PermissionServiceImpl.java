@@ -29,8 +29,8 @@ public class PermissionServiceImpl implements PermissionService {
     @Override
     @Transactional
     public PermissionResponse create(PermissionRequest request) {
-        if (permissionRepository.findByName(request.name()).isPresent()) {
-            throw new DuplicateResourceException("Permission already exists: " + request.name());
+        if (permissionRepository.findByName(request.getName()).isPresent()) {
+            throw new DuplicateResourceException("Permission already exists: " + request.getName());
         }
         Permission saved = permissionRepository.save(permissionMapper.toEntity(request));
         log.info("Permission created id={} name={}", saved.getId(), saved.getName());
@@ -42,12 +42,12 @@ public class PermissionServiceImpl implements PermissionService {
     public PermissionResponse update(Long id, PermissionRequest request) {
         Permission permission = permissionRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Permission", id));
-        if (!permission.getName().equals(request.name())
-                && permissionRepository.findByName(request.name()).isPresent()) {
-            throw new DuplicateResourceException("Permission already exists: " + request.name());
+        if (!permission.getName().equals(request.getName())
+                && permissionRepository.findByName(request.getName()).isPresent()) {
+            throw new DuplicateResourceException("Permission already exists: " + request.getName());
         }
         permissionMapper.applyUpdate(request, permission);
-        log.info("Permission updated id={} name={}", id, request.name());
+        log.info("Permission updated id={} name={}", id, request.getName());
         return permissionMapper.toResponse(permission);
     }
 

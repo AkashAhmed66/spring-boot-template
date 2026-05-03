@@ -22,6 +22,6 @@ public class PermissionMapper {
     }
 
     public PermissionResponse toResponse(Permission permission) {
-        return PermissionResponse.from(permission);
+        return modelMapper.map(permission, PermissionResponse.class);
     }
 }

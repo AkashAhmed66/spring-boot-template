@@ -1,8 +1,19 @@
 package com.template.springboot.modules.user.dto;
 
 import jakarta.validation.constraints.NotEmpty;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.util.Set;
 
-public record AssignRolesRequest(@NotEmpty Set<String> roles) {
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+public class AssignRolesRequest {
+
+    @NotEmpty
+    private Set<String> roles;
 }

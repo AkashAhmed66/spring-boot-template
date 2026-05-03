@@ -60,8 +60,8 @@ public class UserServiceImpl implements UserService {
     public UserResponse update(Long id, UpdateUserRequest request) {
         User user = userRepository.findWithRolesById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("User", id));
-        if (request.email() != null && !request.email().equalsIgnoreCase(user.getEmail())
-                && userRepository.existsByEmail(request.email())) {
+        if (request.getEmail() != null && !request.getEmail().equalsIgnoreCase(user.getEmail())
+                && userRepository.existsByEmail(request.getEmail())) {
             throw new DuplicateResourceException("Email is already in use");
         }
         userMapper.applyUpdate(request, user);
@@ -73,7 +73,7 @@ public class UserServiceImpl implements UserService {
     public UserResponse assignRoles(Long id, AssignRolesRequest request) {
         User user = userRepository.findWithRolesById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("User", id));
-        Set<Role> roles = request.roles().stream()
+        Set<Role> roles = request.getRoles().stream()
                 .map(name -> roleRepository.findByName(name)
                         .orElseThrow(() -> new ResourceNotFoundException("Role", name)))
                 .collect(Collectors.toCollection(HashSet::new));

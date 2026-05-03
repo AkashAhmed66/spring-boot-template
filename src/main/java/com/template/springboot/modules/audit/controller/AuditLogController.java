@@ -3,6 +3,7 @@ package com.template.springboot.modules.audit.controller;
 import com.template.springboot.common.dto.ApiResponse;
 import com.template.springboot.common.dto.PageResponse;
 import com.template.springboot.common.exception.ResourceNotFoundException;
+import com.template.springboot.common.mapper.GenericMapper;
 import com.template.springboot.common.security.HasPermission;
 import com.template.springboot.modules.audit.annotation.Auditable;
 import com.template.springboot.modules.audit.dto.AuditLogFilter;
@@ -32,6 +33,7 @@ import java.time.Instant;
 public class AuditLogController {
 
     private final AuditLogRepository repository;
+    private final GenericMapper genericMapper;
 
     @GetMapping
     @HasPermission(PermissionName.AUDIT_READ)
@@ -61,7 +63,7 @@ public class AuditLogController {
 
         Page<AuditLogResponse> page = repository
                 .findAll(AuditLogSpecifications.withFilter(filter), effective)
-                .map(AuditLogResponse::from);
+                .map(a -> genericMapper.map(a, AuditLogResponse.class));
 
         return new ApiResponse(PageResponse.of(page));
     }
@@ -71,7 +73,7 @@ public class AuditLogController {
     @Auditable(action = "AUDIT_READ", resourceType = "AuditLog", resourceId = "#id")
     public ApiResponse getById(@PathVariable Long id) {
         return repository.findById(id)
-                .map(AuditLogResponse::from)
+                .map(a -> genericMapper.map(a, AuditLogResponse.class))
                 .map(ApiResponse::new)
                 .orElseThrow(() -> new ResourceNotFoundException("AuditLog not found: " + id));
     }
