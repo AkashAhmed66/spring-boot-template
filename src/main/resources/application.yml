@@ -45,6 +45,22 @@ app:
       issuer: ${APP_SECURITY_JWT_ISSUER:springboot-template}
       access-token-ttl-minutes: ${APP_SECURITY_JWT_ACCESS_TTL_MINUTES:60}
       refresh-token-ttl-days: ${APP_SECURITY_JWT_REFRESH_TTL_DAYS:14}
+  rate-limit:
+    enabled: ${APP_RATE_LIMIT_ENABLED:true}
+    capacity: ${APP_RATE_LIMIT_CAPACITY:60}
+    refill-tokens: ${APP_RATE_LIMIT_REFILL_TOKENS:60}
+    refill-period: ${APP_RATE_LIMIT_REFILL_PERIOD:PT1M}
+    auth-capacity: ${APP_RATE_LIMIT_AUTH_CAPACITY:10}
+    auth-refill-tokens: ${APP_RATE_LIMIT_AUTH_REFILL_TOKENS:10}
+    auth-refill-period: ${APP_RATE_LIMIT_AUTH_REFILL_PERIOD:PT1M}
+    auth-path-prefixes:
+      - /api/v1/auth/
+    include-path-prefixes:
+      - /api/
+    exclude-path-patterns:
+      - /actuator/.*
+      - .*/swagger-ui.*
+      - /v3/api-docs.*
   audit:
     # Master switch: false disables capture, the @Auditable aspect, the async executor, and the read API.
     enabled: ${APP_AUDIT_ENABLED:true}

@@ -1,9 +1,11 @@
 package com.template.springboot.config;
 
+import com.template.springboot.common.ratelimit.RateLimitFilter;
 import com.template.springboot.common.security.JwtAuthenticationFilter;
 import com.template.springboot.common.security.JwtProperties;
 import com.template.springboot.common.security.RestAccessDeniedHandler;
 import com.template.springboot.common.security.RestAuthenticationEntryPoint;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -67,7 +69,8 @@ class SecurityConfig {
     SecurityFilterChain filterChain(HttpSecurity http,
                                     JwtAuthenticationFilter jwtAuthenticationFilter,
                                     RestAuthenticationEntryPoint authenticationEntryPoint,
-                                    RestAccessDeniedHandler accessDeniedHandler) throws Exception {
+                                    RestAccessDeniedHandler accessDeniedHandler,
+                                    ObjectProvider<RateLimitFilter> rateLimitFilterProvider) throws Exception {
         http
                 .cors(c -> c.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)
@@ -81,6 +84,13 @@ class SecurityConfig {
                         .requestMatchers(PUBLIC_PATHS).permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+
+        // Place the rate limiter immediately after the JWT filter so the SecurityContext
+        // is populated and we can key the bucket by username instead of falling back to IP.
+        RateLimitFilter rateLimitFilter = rateLimitFilterProvider.getIfAvailable();
+        if (rateLimitFilter != null) {
+            http.addFilterAfter(rateLimitFilter, JwtAuthenticationFilter.class);
+        }
         return http.build();
     }
 }
