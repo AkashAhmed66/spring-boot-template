@@ -22,6 +22,8 @@ import java.util.List;
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
+    public static final String AUTH_FAILURE_REASON = "auth.failure.reason";
+
     private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
     private static final String BEARER_PREFIX = "Bearer ";
 
@@ -40,7 +42,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             try {
                 Claims claims = jwtService.parse(token);
                 if (!jwtService.isAccessToken(claims)) {
-                    log.debug("Rejected non-access token at {}", request.getRequestURI());
+                    String reason = "Refresh token cannot be used to authenticate API calls — use the access token";
+                    log.warn("Rejected non-access token at {} {}", request.getMethod(), request.getRequestURI());
+                    request.setAttribute(AUTH_FAILURE_REASON, reason);
                 } else {
                     List<SimpleGrantedAuthority> authorities = jwtService.extractAuthorities(claims).stream()
                             .map(SimpleGrantedAuthority::new)
@@ -54,7 +58,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     SecurityContextHolder.getContext().setAuthentication(auth);
                 }
             } catch (JwtException ex) {
-                log.debug("JWT validation failed: {}", ex.getMessage());
+                String reason = ex.getClass().getSimpleName() + ": " + ex.getMessage();
+                log.warn("JWT validation failed at {} {} — {}",
+                        request.getMethod(), request.getRequestURI(), reason);
+                request.setAttribute(AUTH_FAILURE_REASON, reason);
             }
         }
         chain.doFilter(request, response);

@@ -4,6 +4,7 @@ import tools.jackson.databind.ObjectMapper;
 import com.template.springboot.common.dto.ApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.AuthenticationEntryPoint;
@@ -23,9 +24,17 @@ public class RestAuthenticationEntryPoint implements AuthenticationEntryPoint {
     @Override
     public void commence(HttpServletRequest request, HttpServletResponse response, AuthenticationException ex)
             throws IOException {
+        Object reason = request.getAttribute(JwtAuthenticationFilter.AUTH_FAILURE_REASON);
+        String message;
+        if (reason instanceof String s && !s.isBlank()) {
+            message = "Authentication failed: " + s;
+        } else if (request.getHeader(HttpHeaders.AUTHORIZATION) == null) {
+            message = "Authentication required: missing Authorization header";
+        } else {
+            message = "Authentication required: " + ex.getMessage();
+        }
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        objectMapper.writeValue(response.getOutputStream(),
-                ApiResponse.error("Authentication required", null));
+        objectMapper.writeValue(response.getOutputStream(), ApiResponse.error(message, null));
     }
 }
