@@ -30,7 +30,7 @@ import java.math.BigDecimal;
 
 @RestController
 @RequestMapping("/api/v1/products")
-@Tag(name = "Products")
+@Tag(name = "Products/Template/Test")
 @RequiredArgsConstructor
 public class ProductController {
 
