@@ -1,6 +1,7 @@
 package com.template.springboot.config;
 
 import com.template.springboot.common.ratelimit.RateLimitFilter;
+import com.template.springboot.common.security.CorsProperties;
 import com.template.springboot.common.security.JwtAuthenticationFilter;
 import com.template.springboot.common.security.JwtProperties;
 import com.template.springboot.common.security.RestAccessDeniedHandler;
@@ -23,8 +24,6 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-
-import java.util.List;
 
 @Configuration
 @EnableConfigurationProperties(JwtProperties.class)
@@ -54,13 +53,14 @@ class SecurityConfig {
     }
 
     @Bean
-    CorsConfigurationSource corsConfigurationSource() {
+    CorsConfigurationSource corsConfigurationSource(CorsProperties properties) {
         CorsConfiguration cors = new CorsConfiguration();
-        cors.setAllowedOriginPatterns(List.of("*"));
-        cors.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        cors.setAllowedHeaders(List.of("*"));
-        cors.setExposedHeaders(List.of("Authorization"));
-        cors.setAllowCredentials(true);
+        cors.setAllowedOriginPatterns(properties.getAllowedOriginPatterns());
+        cors.setAllowedMethods(properties.getAllowedMethods());
+        cors.setAllowedHeaders(properties.getAllowedHeaders());
+        cors.setExposedHeaders(properties.getExposedHeaders());
+        cors.setAllowCredentials(properties.isAllowCredentials());
+        cors.setMaxAge(properties.getMaxAgeSeconds());
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", cors);
         return source;
@@ -71,9 +71,10 @@ class SecurityConfig {
                                     JwtAuthenticationFilter jwtAuthenticationFilter,
                                     RestAuthenticationEntryPoint authenticationEntryPoint,
                                     RestAccessDeniedHandler accessDeniedHandler,
+                                    CorsConfigurationSource corsConfigurationSource,
                                     ObjectProvider<RateLimitFilter> rateLimitFilterProvider) throws Exception {
         http
-                .cors(c -> c.configurationSource(corsConfigurationSource()))
+                .cors(c -> c.configurationSource(corsConfigurationSource))
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(e -> e

@@ -39,6 +39,15 @@ app:
   storage:
     base-path: ${APP_STORAGE_BASE_PATH:uploads}
   security:
+    cors:
+      # Comma-separated list (or YAML list). Use port wildcards like http://localhost:*
+      # NEVER set a bare "*" while allow-credentials is true — that opens credentialed access from any origin.
+      allowed-origin-patterns: ${APP_SECURITY_CORS_ALLOWED_ORIGINS:http://localhost:*,http://127.0.0.1:*}
+      allowed-methods: ${APP_SECURITY_CORS_ALLOWED_METHODS:GET,POST,PUT,PATCH,DELETE,OPTIONS}
+      allowed-headers: ${APP_SECURITY_CORS_ALLOWED_HEADERS:*}
+      exposed-headers: ${APP_SECURITY_CORS_EXPOSED_HEADERS:Authorization,X-Request-Id,X-RateLimit-Limit,X-RateLimit-Remaining,Retry-After}
+      allow-credentials: ${APP_SECURITY_CORS_ALLOW_CREDENTIALS:true}
+      max-age-seconds: ${APP_SECURITY_CORS_MAX_AGE:3600}
     jwt:
       # 256-bit (32 byte) base64-encoded secret. ALWAYS override in env in production.
       secret: ${APP_SECURITY_JWT_SECRET:Y2hhbmdlLW1lLWluLXByb2QtdGhpcy1pcy1ub3Qtc2VjdXJlLXNlY3JldC1rZXk=}
