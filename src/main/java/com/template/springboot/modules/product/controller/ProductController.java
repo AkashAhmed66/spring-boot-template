@@ -99,25 +99,6 @@ public class ProductController {
     @Auditable(action = "PRODUCT_ORDER", resourceType = "Product", resourceId = "#request.productId")
     @Operation(
             summary = "Place a product order (idempotent)",
-            description = """
-                    Decrements product stock and returns a generated order reference.
-
-                    **Idempotency**
-                    Clients MUST send a unique `Idempotency-Key` header (recommended: UUID v4)
-                    that identifies the logical request. The server stores the response keyed by
-                    `(user, key)` for 24 hours. Behaviour on retry:
-
-                    - **Same key + same body** → the cached response is replayed verbatim, the
-                      handler is *not* re-executed (so stock is not double-decremented).
-                    - **Same key + different body** → `409 Conflict`
-                      (`Idempotency-Key already used with a different request body`).
-                    - **Concurrent retry while the first call is still running** → `409 Conflict`
-                      (`A request with this Idempotency-Key is still in progress`).
-                    - **No header** → `400 Bad Request`.
-
-                    Generate a fresh key per *logical user action*; reuse the same key when you
-                    retry the same action after a network failure or timeout.
-                    """,
             parameters = @Parameter(
                     name = "Idempotency-Key",
                     in = ParameterIn.HEADER,
@@ -126,24 +107,6 @@ public class ProductController {
                     example = "9d7c6f5a-2e1b-4a3c-8e9f-1a2b3c4d5e6f",
                     schema = @Schema(type = "string", maxLength = 128))
     )
-    @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "201",
-                    description = "Order placed (or replay of a prior identical request).",
-                    content = @Content(schema = @Schema(implementation = ApiResponse.class))),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "400",
-                    description = "Missing/invalid Idempotency-Key, validation errors, or insufficient stock.",
-                    content = @Content(schema = @Schema(implementation = ApiResponse.class))),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "409",
-                    description = "Idempotency-Key reused with a different body, or a prior request with the same key is still in progress.",
-                    content = @Content(schema = @Schema(implementation = ApiResponse.class))),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "404",
-                    description = "Product not found.",
-                    content = @Content(schema = @Schema(implementation = ApiResponse.class)))
-    })
     public ApiResponse placeOrder(@Valid @RequestBody PlaceOrderRequest request) {
         return ApiResponse.created(productService.placeOrder(request), "Order placed");
     }
