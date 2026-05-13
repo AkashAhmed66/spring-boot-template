@@ -1,5 +1,7 @@
 package com.template.springboot.modules.product.service;
 
+import com.template.springboot.modules.product.dto.OrderResponse;
+import com.template.springboot.modules.product.dto.PlaceOrderRequest;
 import com.template.springboot.modules.product.dto.ProductFilter;
 import com.template.springboot.modules.product.dto.ProductRequest;
 import com.template.springboot.modules.product.dto.ProductResponse;
@@ -18,4 +20,6 @@ public interface ProductService {
     Page<ProductResponse> search(ProductFilter filter, Pageable pageable);
 
     void delete(Long id);
+
+    OrderResponse placeOrder(PlaceOrderRequest request);
 }

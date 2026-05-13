@@ -48,6 +48,11 @@ public class GlobalExceptionHandler {
         return ApiResponse.error(ex.getMessage(), null, HttpStatus.CONFLICT);
     }
 
+    @ExceptionHandler(ConflictException.class)
+    public ApiResponse handleConflict(ConflictException ex) {
+        return ApiResponse.error(ex.getMessage(), null, HttpStatus.CONFLICT);
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ApiResponse handleValidation(MethodArgumentNotValidException ex) {
         Map<String, String> fieldErrors = new HashMap<>();

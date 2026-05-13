@@ -1,10 +1,13 @@
 package com.template.springboot.modules.product.serviceImpl;
 
+import com.template.springboot.common.exception.BadRequestException;
 import com.template.springboot.common.exception.DuplicateResourceException;
 import com.template.springboot.common.exception.ResourceNotFoundException;
 import com.template.springboot.common.security.SecurityUtils;
 import com.template.springboot.modules.file.dto.FileUploadResponse;
 import com.template.springboot.modules.file.service.FileStorageService;
+import com.template.springboot.modules.product.dto.OrderResponse;
+import com.template.springboot.modules.product.dto.PlaceOrderRequest;
 import com.template.springboot.modules.product.dto.ProductFilter;
 import com.template.springboot.modules.product.dto.ProductRequest;
 import com.template.springboot.modules.product.dto.ProductResponse;
@@ -20,6 +23,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.math.BigDecimal;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -88,5 +94,29 @@ public class ProductServiceImpl implements ProductService {
         product.markDeleted(SecurityUtils.getCurrentUsername().orElse("system"));
         productRepository.save(product);
         log.warn("Product soft-deleted id={}", id);
+    }
+
+    @Override
+    @Transactional
+    public OrderResponse placeOrder(PlaceOrderRequest request) {
+        Product product = productRepository.findById(request.getProductId())
+                .orElseThrow(() -> new ResourceNotFoundException("Product", request.getProductId()));
+        if (product.getStock() < request.getQuantity()) {
+            throw new BadRequestException("Insufficient stock for product " + product.getSku()
+                    + " (available=" + product.getStock() + ", requested=" + request.getQuantity() + ")");
+        }
+        product.setStock(product.getStock() - request.getQuantity());
+        BigDecimal total = product.getPrice().multiply(BigDecimal.valueOf(request.getQuantity()));
+        String orderRef = "ORD-" + UUID.randomUUID();
+        log.info("Order placed ref={} productId={} qty={} total={}",
+                orderRef, product.getId(), request.getQuantity(), total);
+        return new OrderResponse(
+                orderRef,
+                product.getId(),
+                product.getSku(),
+                request.getQuantity(),
+                product.getPrice(),
+                total,
+                product.getStock());
     }
 }

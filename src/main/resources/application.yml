@@ -70,6 +70,13 @@ app:
       - /actuator/.*
       - .*/swagger-ui.*
       - /v3/api-docs.*
+  idempotency:
+    # Master switch: false disables the @Idempotent aspect and the cleanup job.
+    enabled: ${APP_IDEMPOTENCY_ENABLED:true}
+    # How long a completed idempotency record is kept; retries within this window replay the cached response.
+    ttl: ${APP_IDEMPOTENCY_TTL:PT24H}
+    # How often the scheduled job purges expired records.
+    cleanup-interval: ${APP_IDEMPOTENCY_CLEANUP_INTERVAL:PT1H}
   audit:
     # Master switch: false disables capture, the @Auditable aspect, the async executor, and the read API.
     enabled: ${APP_AUDIT_ENABLED:true}

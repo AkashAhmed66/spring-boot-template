@@ -1,14 +1,22 @@
 package com.template.springboot.modules.product.controller;
 
 import com.template.springboot.common.dto.ApiResponse;
+import com.template.springboot.common.idempotency.Idempotent;
 import com.template.springboot.common.security.CurrentUserService;
 import com.template.springboot.common.security.HasPermission;
 import com.template.springboot.modules.audit.annotation.Auditable;
 import com.template.springboot.modules.permission.enums.PermissionName;
+import com.template.springboot.modules.product.dto.PlaceOrderRequest;
 import com.template.springboot.modules.product.dto.ProductFilter;
 import com.template.springboot.modules.product.dto.ProductRequest;
 import com.template.springboot.modules.product.enums.ProductStatus;
 import com.template.springboot.modules.product.service.ProductService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +28,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
@@ -82,5 +91,60 @@ public class ProductController {
     public ApiResponse delete(@PathVariable Long id) {
         productService.delete(id);
         return ApiResponse.message("Deleted");
+    }
+
+    @PostMapping(value = "/orders", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @HasPermission(PermissionName.PRODUCT_WRITE)
+    @Idempotent
+    @Auditable(action = "PRODUCT_ORDER", resourceType = "Product", resourceId = "#request.productId")
+    @Operation(
+            summary = "Place a product order (idempotent)",
+            description = """
+                    Decrements product stock and returns a generated order reference.
+
+                    **Idempotency**
+                    Clients MUST send a unique `Idempotency-Key` header (recommended: UUID v4)
+                    that identifies the logical request. The server stores the response keyed by
+                    `(user, key)` for 24 hours. Behaviour on retry:
+
+                    - **Same key + same body** → the cached response is replayed verbatim, the
+                      handler is *not* re-executed (so stock is not double-decremented).
+                    - **Same key + different body** → `409 Conflict`
+                      (`Idempotency-Key already used with a different request body`).
+                    - **Concurrent retry while the first call is still running** → `409 Conflict`
+                      (`A request with this Idempotency-Key is still in progress`).
+                    - **No header** → `400 Bad Request`.
+
+                    Generate a fresh key per *logical user action*; reuse the same key when you
+                    retry the same action after a network failure or timeout.
+                    """,
+            parameters = @Parameter(
+                    name = "Idempotency-Key",
+                    in = ParameterIn.HEADER,
+                    required = true,
+                    description = "Client-generated unique identifier (≤128 chars). Recommended: UUID v4.",
+                    example = "9d7c6f5a-2e1b-4a3c-8e9f-1a2b3c4d5e6f",
+                    schema = @Schema(type = "string", maxLength = 128))
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "201",
+                    description = "Order placed (or replay of a prior identical request).",
+                    content = @Content(schema = @Schema(implementation = ApiResponse.class))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400",
+                    description = "Missing/invalid Idempotency-Key, validation errors, or insufficient stock.",
+                    content = @Content(schema = @Schema(implementation = ApiResponse.class))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "409",
+                    description = "Idempotency-Key reused with a different body, or a prior request with the same key is still in progress.",
+                    content = @Content(schema = @Schema(implementation = ApiResponse.class))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404",
+                    description = "Product not found.",
+                    content = @Content(schema = @Schema(implementation = ApiResponse.class)))
+    })
+    public ApiResponse placeOrder(@Valid @RequestBody PlaceOrderRequest request) {
+        return ApiResponse.created(productService.placeOrder(request), "Order placed");
     }
 }
