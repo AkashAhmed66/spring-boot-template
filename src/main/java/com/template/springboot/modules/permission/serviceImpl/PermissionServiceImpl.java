@@ -13,6 +13,10 @@ import com.template.springboot.modules.permission.service.PermissionService;
 import com.template.springboot.modules.permission.specification.PermissionSpecifications;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.CachePut;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -22,6 +26,10 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 @Slf4j
 public class PermissionServiceImpl implements PermissionService {
+
+    private static final String PERMISSIONS_CACHE = "permissions";
+    private static final String ROLES_CACHE = "roles";
+    private static final String USER_DETAILS_CACHE = "userDetails";
 
     private final PermissionRepository permissionRepository;
     private final PermissionMapper permissionMapper;
@@ -39,6 +47,13 @@ public class PermissionServiceImpl implements PermissionService {
 
     @Override
     @Transactional
+    @Caching(
+            put = @CachePut(value = PERMISSIONS_CACHE, key = "#id"),
+            evict = {
+                    @CacheEvict(value = ROLES_CACHE, allEntries = true),
+                    @CacheEvict(value = USER_DETAILS_CACHE, allEntries = true)
+            }
+    )
     public PermissionResponse update(Long id, PermissionRequest request) {
         Permission permission = permissionRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Permission", id));
@@ -53,6 +68,7 @@ public class PermissionServiceImpl implements PermissionService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = PERMISSIONS_CACHE, key = "#id")
     public PermissionResponse getById(Long id) {
         return permissionRepository.findById(id)
                 .map(permissionMapper::toResponse)
@@ -68,6 +84,11 @@ public class PermissionServiceImpl implements PermissionService {
 
     @Override
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(value = PERMISSIONS_CACHE, key = "#id"),
+            @CacheEvict(value = ROLES_CACHE, allEntries = true),
+            @CacheEvict(value = USER_DETAILS_CACHE, allEntries = true)
+    })
     public void delete(Long id) {
         Permission permission = permissionRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Permission", id));

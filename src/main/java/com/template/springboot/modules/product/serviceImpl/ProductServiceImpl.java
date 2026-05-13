@@ -18,6 +18,9 @@ import com.template.springboot.modules.product.service.ProductService;
 import com.template.springboot.modules.product.specification.ProductSpecifications;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.CachePut;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -33,6 +36,7 @@ import java.util.UUID;
 public class ProductServiceImpl implements ProductService {
 
     private static final String PRODUCT_IMAGE_SUBFOLDER = "products";
+    private static final String PRODUCT_CACHE = "products";
 
     private final ProductRepository productRepository;
     private final ProductMapper productMapper;
@@ -56,6 +60,7 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     @Transactional
+    @CachePut(value = PRODUCT_CACHE, key = "#id")
     public ProductResponse update(Long id, ProductRequest request, MultipartFile image) {
         Product product = productRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Product", id));
@@ -73,6 +78,7 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = PRODUCT_CACHE, key = "#id")
     public ProductResponse getById(Long id) {
         return productRepository.findById(id)
                 .map(productMapper::toResponse)
@@ -88,6 +94,7 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     @Transactional
+    @CacheEvict(value = PRODUCT_CACHE, key = "#id")
     public void delete(Long id) {
         Product product = productRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Product", id));
@@ -98,6 +105,7 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     @Transactional
+    @CacheEvict(value = PRODUCT_CACHE, key = "#request.productId")
     public OrderResponse placeOrder(PlaceOrderRequest request) {
         Product product = productRepository.findById(request.getProductId())
                 .orElseThrow(() -> new ResourceNotFoundException("Product", request.getProductId()));

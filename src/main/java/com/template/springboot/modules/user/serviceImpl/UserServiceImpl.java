@@ -15,6 +15,10 @@ import com.template.springboot.modules.user.repository.UserRepository;
 import com.template.springboot.modules.user.service.UserService;
 import com.template.springboot.modules.user.specification.UserSpecifications;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.CachePut;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -27,6 +31,9 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
+
+    private static final String USERS_CACHE = "users";
+    private static final String USER_DETAILS_CACHE = "userDetails";
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
@@ -41,6 +48,7 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = USERS_CACHE, key = "#id")
     public UserResponse getById(Long id) {
         return userRepository.findWithRolesById(id)
                 .map(userMapper::toResponse)
@@ -57,6 +65,10 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
+    @Caching(
+            put = @CachePut(value = USERS_CACHE, key = "#id"),
+            evict = @CacheEvict(value = USER_DETAILS_CACHE, allEntries = true)
+    )
     public UserResponse update(Long id, UpdateUserRequest request) {
         User user = userRepository.findWithRolesById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("User", id));
@@ -70,6 +82,10 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
+    @Caching(
+            put = @CachePut(value = USERS_CACHE, key = "#id"),
+            evict = @CacheEvict(value = USER_DETAILS_CACHE, allEntries = true)
+    )
     public UserResponse assignRoles(Long id, AssignRolesRequest request) {
         User user = userRepository.findWithRolesById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("User", id));
@@ -83,6 +99,10 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(value = USERS_CACHE, key = "#id"),
+            @CacheEvict(value = USER_DETAILS_CACHE, allEntries = true)
+    })
     public void delete(Long id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("User", id));

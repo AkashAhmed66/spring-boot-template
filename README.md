@@ -22,13 +22,15 @@ A reusable Spring Boot 4 / Java 17 starter for building secure REST APIs. Comes 
    - [Auto-Mapping (Entity ↔ DTO)](#auto-mapping-entity--dto)
    - [Audit Logging](#audit-logging-db-backed)
    - [Rate Limiting](#rate-limiting)
+   - [Caching](#caching)
    - [Validation & Exceptions](#validation)
 7. [Configuration Reference](#configuration-reference)
 8. [Built-in Endpoints](#built-in-endpoints)
 9. [Database Migrations](#database-migrations)
 10. [Logging](#logging)
-11. [Build & Test](#build--test)
-12. [What's Intentionally NOT in the Box](#whats-intentionally-not-in-the-box)
+11. [Switching Cache to Redis](#switching-cache-to-redis)
+12. [Build & Test](#build--test)
+13. [What's Intentionally NOT in the Box](#whats-intentionally-not-in-the-box)
 
 ---
 
@@ -47,6 +49,7 @@ A reusable Spring Boot 4 / Java 17 starter for building secure REST APIs. Comes 
 | Docs | springdoc-openapi 3 (Swagger UI) |
 | Logging | Logback (rolling files, 3-day retention, MDC `requestId` + `username`) |
 | Rate limiting | Bucket4j 8.10 (in-memory, per-identity buckets) |
+| Caching | Spring Cache abstraction · Caffeine (default) · Redis-ready (one env flip) |
 | Config | spring-dotenv 4.0 (auto-loads `.env`) + `@ConfigurationProperties` |
 | Build | Maven |
 
@@ -559,6 +562,38 @@ X-RateLimit-Remaining: 0
 
 > **Cluster note**: The default `RateLimitService` uses a `ConcurrentHashMap` — fine for single-instance. For multi-instance, replace it with `bucket4j-redis`'s `LockBasedProxyManager`. The filter signature stays identical.
 
+### Caching
+Spring's `@Cacheable` / `@CachePut` / `@CacheEvict` abstraction is wired in. The annotations are **provider-agnostic** — switching the backend (Caffeine → Redis) is an env + dependency change, not a code change. See [Switching Cache to Redis](#switching-cache-to-redis) for the migration.
+
+**Implementation lives in** [`common/cache/`](src/main/java/com/template/springboot/common/cache/):
+- [CacheConfig.java](src/main/java/com/template/springboot/common/cache/CacheConfig.java) — `@EnableCaching` + Caffeine `CacheManager` bean (guarded by `@ConditionalOnProperty(spring.cache.type=caffeine)` so a Redis swap skips it cleanly).
+- [CacheProperties.java](src/main/java/com/template/springboot/common/cache/CacheProperties.java) — per-cache TTL + max-size from `app.cache.*` in [application.yml](src/main/resources/application.yml).
+
+**Caches wired by default:**
+
+| Cache name     | Used by                                                                 | TTL  | Max | Eviction triggers                                                            |
+|----------------|--------------------------------------------------------------------------|------|-----|------------------------------------------------------------------------------|
+| `products`     | `ProductServiceImpl` — `getById`                                        | 15m  | 5k  | `update` / `delete` / `placeOrder` (any stock change)                        |
+| `users`        | `UserServiceImpl` — `getById`                                           | 10m  | 5k  | `update` / `assignRoles` / `delete` (and these also evict `userDetails`)     |
+| `roles`        | `RoleServiceImpl` — `getById`                                           | 1h   | 500 | `update` / `assignPermissions` / `delete` (and evict all `userDetails`)      |
+| `permissions`  | `PermissionServiceImpl` — `getById`                                     | 1h   | 500 | `update` / `delete` (and evict all `roles` + all `userDetails`)              |
+| `userDetails`  | `CustomUserDetailsService.loadUserByUsername` — **every auth'd request** | 5m   | 10k | Any user/role/permission mutation (broad eviction keeps RBAC correct)        |
+
+**Cross-cache eviction strategy:** RBAC changes (a role gaining a permission, a user being reassigned) evict all `userDetails` entries — we don't know which usernames are affected, and authorization correctness wins over hit rate.
+
+**Configuration:** per-cache values are tuned in [application.yml](src/main/resources/application.yml) under `app.cache.*`. They're intentionally **not** exposed as env vars — these are app-internal tradeoffs, not deployment knobs. The only cache-related env var is `SPRING_CACHE_TYPE`.
+
+**Add caching to a new service:**
+```java
+@Cacheable(value = "orders", key = "#id")              // populate on miss
+@CachePut(value = "orders", key = "#id")               // refresh after write
+@CacheEvict(value = "orders", key = "#id")             // remove on delete
+@CacheEvict(value = "orders", allEntries = true)       // nuclear option
+```
+Add a matching block under `app.cache.caches.orders` in [application.yml](src/main/resources/application.yml). If you skip the yml entry, the `defaults` block applies.
+
+**Inspect contents at runtime:** add `caches` to `MANAGEMENT_ENDPOINTS` and hit `GET /actuator/caches`.
+
 ### Validation
 Use Jakarta Bean Validation (`@NotBlank`, `@Email`, `@Size`, etc.) on DTOs and `@Valid` on the controller parameter. Failures are caught by `GlobalExceptionHandler.handleValidation`:
 ```json
@@ -640,6 +675,11 @@ Every value in [application.yml](src/main/resources/application.yml) is `${VAR:d
 | `APP_AUDIT_CAPTURE_REQUEST_BODY` | `true` | Persist request bodies |
 | `APP_AUDIT_CAPTURE_RESPONSE_BODY` | `true` | Persist response bodies |
 | `APP_AUDIT_MAX_BODY_LENGTH` | `10000` | Truncate above this many chars |
+
+### Caching
+| Variable | Default | Purpose |
+|---|---|---|
+| `SPRING_CACHE_TYPE` | `caffeine` | Backend selector — `caffeine` (in-memory), `redis`, or `none`. See [Switching Cache to Redis](#switching-cache-to-redis). Per-cache TTLs live in `application.yml` under `app.cache.*`, not env. |
 
 ### Rate limiting
 | Variable | Default | Purpose |
@@ -782,6 +822,56 @@ Levels per package live in [logback-spring.xml](src/main/resources/logback-sprin
 
 ---
 
+## Switching Cache to Redis
+
+The cache layer is intentionally provider-agnostic — flipping from in-memory Caffeine to Redis is a **two-file change** (pom + env), no Java edits required.
+
+### 1. Add the dependency
+
+In [pom.xml](pom.xml), under `<dependencies>`:
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-data-redis</artifactId>
+</dependency>
+```
+
+### 2. Flip the env
+
+In `.env` (or your production env injection):
+
+```bash
+SPRING_CACHE_TYPE=redis
+SPRING_DATA_REDIS_HOST=redis.your.host
+SPRING_DATA_REDIS_PORT=6379
+SPRING_DATA_REDIS_PASSWORD=...           # optional
+SPRING_DATA_REDIS_DATABASE=0             # optional, 0–15
+```
+
+### 3. Restart
+
+That's the whole migration. Mechanically:
+
+- The Caffeine `CacheManager` bean in [CacheConfig.java](src/main/java/com/template/springboot/common/cache/CacheConfig.java) is guarded by `@ConditionalOnProperty(spring.cache.type=caffeine)`, so it's silently skipped.
+- Spring Boot auto-detects the Redis starter and `spring.cache.type=redis`, then provisions its own `RedisCacheManager`.
+- The `@Cacheable("products")` / `@CacheEvict(...)` annotations across the codebase don't know or care which backend they're hitting.
+
+### 4. Two things to consider after the swap
+
+**(a) Serialization.** Spring Boot's default Redis cache uses **JDK serialization**, so the classes you cache (`UserResponse`, `RoleResponse`, `PermissionResponse`, `ProductResponse`, `CustomUserDetails`) need to either:
+- `implements Serializable`, **or**
+- swap the serializer to JSON by adding a one-time `RedisCacheManagerBuilderCustomizer` bean that uses `GenericJackson2JsonRedisSerializer`.
+
+JSON is the recommended path — survives class refactors, readable in `redis-cli`.
+
+**(b) Per-cache TTLs.** Spring Boot's default `RedisCacheManager` applies a single TTL to all caches. To honour the per-cache TTLs in `app.cache.caches.*.ttl`, add a `RedisCacheManagerBuilderCustomizer` bean (alongside [CacheConfig.java](src/main/java/com/template/springboot/common/cache/CacheConfig.java)) that reads [CacheProperties.java](src/main/java/com/template/springboot/common/cache/CacheProperties.java) and calls `withCacheConfiguration(name, RedisCacheConfiguration.defaultCacheConfig().entryTtl(spec.getTtl()))` for each named cache. This file references Redis types, so it only compiles once the starter is added — keep it next to `CacheConfig` and guard with `@ConditionalOnClass(RedisCacheManager.class)`.
+
+### Rolling back
+Drop the Redis dependency, set `SPRING_CACHE_TYPE=caffeine`, restart. No data migration needed — caches are derived state.
+
+---
+
 ## Build & Test
 
 ```bash
@@ -812,7 +902,7 @@ So you know when to add them:
 - **Refresh-token rotation / revocation table** — refresh tokens are stateless. Add a `revoked_tokens` table if you need server-side invalidation.
 - **Account lockout on failed login** — rate limiting blunts credential stuffing, but a per-user lockout counter is a separate concern.
 - **Email / password reset** — `spring-boot-starter-mail` + a `PasswordResetToken` table aren't wired.
-- **Distributed cache / cluster-safe rate limiter** — current rate limiter is in-memory. Swap to `bucket4j-redis` for multi-instance.
+- **Cluster-safe rate limiter** — current rate limiter is in-memory. Swap to `bucket4j-redis` for multi-instance. (The **cache** abstraction is already cluster-safe — flip to Redis per [Switching Cache to Redis](#switching-cache-to-redis).)
 - **Testcontainers / hermetic test profile** — only `contextLoads` exists. Add Testcontainers for hermetic CI.
 - **CI workflow** — `.github/workflows/` is empty.
 - **Dockerfile / docker-compose.yml** — no one-command spin-up of app + DB.

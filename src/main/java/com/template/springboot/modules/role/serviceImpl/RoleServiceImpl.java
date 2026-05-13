@@ -16,6 +16,10 @@ import com.template.springboot.modules.role.service.RoleService;
 import com.template.springboot.modules.role.specification.RoleSpecifications;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.CachePut;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -29,6 +33,9 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 public class RoleServiceImpl implements RoleService {
+
+    private static final String ROLES_CACHE = "roles";
+    private static final String USER_DETAILS_CACHE = "userDetails";
 
     private final RoleRepository roleRepository;
     private final PermissionRepository permissionRepository;
@@ -51,6 +58,10 @@ public class RoleServiceImpl implements RoleService {
 
     @Override
     @Transactional
+    @Caching(
+            put = @CachePut(value = ROLES_CACHE, key = "#id"),
+            evict = @CacheEvict(value = USER_DETAILS_CACHE, allEntries = true)
+    )
     public RoleResponse update(Long id, RoleRequest request) {
         Role role = roleRepository.findWithPermissionsById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Role", id));
@@ -68,6 +79,7 @@ public class RoleServiceImpl implements RoleService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = ROLES_CACHE, key = "#id")
     public RoleResponse getById(Long id) {
         return roleRepository.findWithPermissionsById(id)
                 .map(roleMapper::toResponse)
@@ -83,6 +95,10 @@ public class RoleServiceImpl implements RoleService {
 
     @Override
     @Transactional
+    @Caching(
+            put = @CachePut(value = ROLES_CACHE, key = "#id"),
+            evict = @CacheEvict(value = USER_DETAILS_CACHE, allEntries = true)
+    )
     public RoleResponse assignPermissions(Long id, AssignPermissionsRequest request) {
         Role role = roleRepository.findWithPermissionsById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Role", id));
@@ -93,6 +109,10 @@ public class RoleServiceImpl implements RoleService {
 
     @Override
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(value = ROLES_CACHE, key = "#id"),
+            @CacheEvict(value = USER_DETAILS_CACHE, allEntries = true)
+    })
     public void delete(Long id) {
         Role role = roleRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Role", id));
