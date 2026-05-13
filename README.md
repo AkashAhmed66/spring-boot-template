@@ -824,11 +824,37 @@ Levels per package live in [logback-spring.xml](src/main/resources/logback-sprin
 
 ## Switching Cache to Redis
 
-The cache layer is intentionally provider-agnostic — flipping from in-memory Caffeine to Redis is a **two-file change** (pom + env), no Java edits required.
+The cache layer is intentionally provider-agnostic. Flipping from in-memory Caffeine to Redis touches **two files** — [pom.xml](pom.xml) and `.env` — plus one optional helper class if you want per-cache TTLs and JSON serialization (recommended).
 
-### 1. Add the dependency
+### Why the swap is safe to do at any point
+- Every `@Cacheable` / `@CachePut` / `@CacheEvict` in the codebase references **cache names** (`"products"`, `"users"`, `"roles"`, `"permissions"`, `"userDetails"`) — never a provider type.
+- The Caffeine `CacheManager` bean in [CacheConfig.java](src/main/java/com/template/springboot/common/cache/CacheConfig.java) is guarded by `@ConditionalOnProperty(name = "spring.cache.type", havingValue = "caffeine", matchIfMissing = true)`. Set `spring.cache.type=redis` and that bean is silently skipped.
+- Spring Boot's autoconfiguration detects the Redis starter on the classpath + the property, and provisions its own `RedisCacheManager` automatically.
+- Caches are **derived state** — nothing in Redis needs to be migrated. Empty cold cache is fine; it warms on first reads.
 
-In [pom.xml](pom.xml), under `<dependencies>`:
+### Step 1 — Start a Redis instance
+
+For local dev, the fastest path is Docker:
+
+```bash
+docker run -d --name redis -p 6379:6379 redis:7-alpine
+```
+
+Or `docker-compose`:
+
+```yaml
+services:
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    restart: unless-stopped
+```
+
+For production, point at your managed Redis (ElastiCache, MemoryStore, Upstash, Redis Cloud, etc.).
+
+### Step 2 — Add the Spring Data Redis starter to [pom.xml](pom.xml)
+
+Inside `<dependencies>`:
 
 ```xml
 <dependency>
@@ -837,38 +863,124 @@ In [pom.xml](pom.xml), under `<dependencies>`:
 </dependency>
 ```
 
-### 2. Flip the env
+(Spring Boot's BOM manages the version. The starter pulls in the Lettuce client by default.)
 
-In `.env` (or your production env injection):
+### Step 3 — Flip the env
+
+Edit `.env` (already contains commented placeholders — uncomment them):
 
 ```bash
 SPRING_CACHE_TYPE=redis
-SPRING_DATA_REDIS_HOST=redis.your.host
+SPRING_DATA_REDIS_HOST=localhost
 SPRING_DATA_REDIS_PORT=6379
-SPRING_DATA_REDIS_PASSWORD=...           # optional
-SPRING_DATA_REDIS_DATABASE=0             # optional, 0–15
+# SPRING_DATA_REDIS_PASSWORD=secret      # uncomment if your Redis requires auth
+# SPRING_DATA_REDIS_DATABASE=0           # 0–15, defaults to 0
 ```
 
-### 3. Restart
+In production, inject these via your platform's secret/env mechanism (Kubernetes Secrets, systemd `EnvironmentFile=`, ECS task definition, etc.).
 
-That's the whole migration. Mechanically:
+### Step 4 — Restart the app
 
-- The Caffeine `CacheManager` bean in [CacheConfig.java](src/main/java/com/template/springboot/common/cache/CacheConfig.java) is guarded by `@ConditionalOnProperty(spring.cache.type=caffeine)`, so it's silently skipped.
-- Spring Boot auto-detects the Redis starter and `spring.cache.type=redis`, then provisions its own `RedisCacheManager`.
-- The `@Cacheable("products")` / `@CacheEvict(...)` annotations across the codebase don't know or care which backend they're hitting.
+```bash
+./mvnw spring-boot:run
+```
 
-### 4. Two things to consider after the swap
+That's the minimum migration. The app starts, `@Cacheable` writes/reads land in Redis instead of process memory, every other behaviour is unchanged.
 
-**(a) Serialization.** Spring Boot's default Redis cache uses **JDK serialization**, so the classes you cache (`UserResponse`, `RoleResponse`, `PermissionResponse`, `ProductResponse`, `CustomUserDetails`) need to either:
-- `implements Serializable`, **or**
-- swap the serializer to JSON by adding a one-time `RedisCacheManagerBuilderCustomizer` bean that uses `GenericJackson2JsonRedisSerializer`.
+### Step 5 — Verify it's hitting Redis
 
-JSON is the recommended path — survives class refactors, readable in `redis-cli`.
+```bash
+# After a cached request, e.g. GET /api/v1/products/1
+redis-cli KEYS '*'
+# Expected output:
+#   1) "products::1"
 
-**(b) Per-cache TTLs.** Spring Boot's default `RedisCacheManager` applies a single TTL to all caches. To honour the per-cache TTLs in `app.cache.caches.*.ttl`, add a `RedisCacheManagerBuilderCustomizer` bean (alongside [CacheConfig.java](src/main/java/com/template/springboot/common/cache/CacheConfig.java)) that reads [CacheProperties.java](src/main/java/com/template/springboot/common/cache/CacheProperties.java) and calls `withCacheConfiguration(name, RedisCacheConfiguration.defaultCacheConfig().entryTtl(spec.getTtl()))` for each named cache. This file references Redis types, so it only compiles once the starter is added — keep it next to `CacheConfig` and guard with `@ConditionalOnClass(RedisCacheManager.class)`.
+redis-cli GET 'products::1'
+# Expected: the serialized ProductResponse blob
 
-### Rolling back
-Drop the Redis dependency, set `SPRING_CACHE_TYPE=caffeine`, restart. No data migration needed — caches are derived state.
+redis-cli TTL 'products::1'
+# Expected: a positive integer (seconds remaining), or -1 if no TTL configured (see Step 6)
+```
+
+You can also enable the actuator caches endpoint by adding `caches` to `MANAGEMENT_ENDPOINTS` in `.env`, then:
+```bash
+curl http://localhost:8080/actuator/caches
+```
+
+### Step 6 — Recommended: JSON serialization + per-cache TTLs
+
+Out of the box, Spring Boot's Redis auto-configuration has two limitations you'll hit immediately:
+
+1. **JDK serialization is the default** → every cached class (e.g. `ProductResponse`, `CustomUserDetails`) must `implements Serializable`. Cached entries break when you refactor those classes (incompatible `serialVersionUID`).
+2. **One global TTL** → the per-cache TTLs in `app.cache.caches.*.ttl` (which Caffeine honoured perfectly) are ignored. Every cache uses the same default.
+
+Fix both with one helper class. Create `src/main/java/com/template/springboot/common/cache/RedisCacheConfig.java`:
+
+```java
+package com.template.springboot.common.cache;
+
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.data.redis.cache.RedisCacheConfiguration;
+import org.springframework.data.redis.cache.RedisCacheManager;
+import org.springframework.data.redis.cache.RedisCacheManagerBuilderCustomizer;
+import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
+import org.springframework.data.redis.serializer.RedisSerializationContext.SerializationPair;
+
+@Configuration
+@ConditionalOnClass(RedisCacheManager.class)
+@ConditionalOnProperty(name = "spring.cache.type", havingValue = "redis")
+class RedisCacheConfig {
+
+    @Bean
+    RedisCacheManagerBuilderCustomizer cacheCustomizer(CacheProperties properties) {
+        GenericJackson2JsonRedisSerializer json = new GenericJackson2JsonRedisSerializer();
+
+        RedisCacheConfiguration defaults = RedisCacheConfiguration.defaultCacheConfig()
+                .entryTtl(properties.getDefaults().getTtl())
+                .serializeValuesWith(SerializationPair.fromSerializer(json));
+
+        return builder -> {
+            builder.cacheDefaults(defaults);
+            properties.getCaches().forEach((name, spec) ->
+                    builder.withCacheConfiguration(name, defaults.entryTtl(spec.getTtl())));
+        };
+    }
+}
+```
+
+This class:
+- Only compiles when `spring-boot-starter-data-redis` is on the classpath (`@ConditionalOnClass`), so you can keep it in source even before you've added the starter — it's dormant.
+- Only activates when `spring.cache.type=redis`, so it stays out of the way when Caffeine is active.
+- Reads the same `app.cache.*` block from [application.yml](src/main/resources/application.yml) that Caffeine reads — **no duplication of TTL config**.
+- Uses JSON serialization so cached blobs survive class refactors and are inspectable with `redis-cli GET <key>`.
+
+### Rolling back to Caffeine
+
+```bash
+# 1. Flip the env back
+SPRING_CACHE_TYPE=caffeine
+
+# 2. (Optional) Remove the Redis dependency from pom.xml if you don't want the jar in the build.
+#    Leaving it in is harmless — RedisCacheConfig.java stays dormant under the conditionals.
+
+# 3. Restart.
+```
+
+No data migration. Caches are derived state — Caffeine starts cold and warms up on first reads.
+
+### Troubleshooting
+
+| Symptom | Cause / Fix |
+|---|---|
+| `Cannot get Jedis connection` or `Unable to connect to Redis` on startup | Redis isn't running, or host/port wrong. Check `docker ps` and `redis-cli -h $HOST -p $PORT PING`. |
+| `java.io.NotSerializableException: ...` thrown on a cache write | You skipped Step 6. Either `implements Serializable` on the cached class, or add `RedisCacheConfig.java`. |
+| Cached values appear as binary garbage in `redis-cli GET ...` | Default JDK serialization is active. Add `RedisCacheConfig.java` for JSON serialization. |
+| All caches expire at the same time | The per-cache TTLs aren't being applied. Add `RedisCacheConfig.java` (per-cache `withCacheConfiguration` calls). |
+| Cache reads are slower than expected | Verify network latency to Redis (`redis-cli --latency`). Caffeine is in-process (~µs); Redis adds a network round-trip (~ms in same DC, more across regions). |
+| Want to clear everything | `redis-cli FLUSHDB` (current DB only) or `FLUSHALL` (all DBs). For one cache: `redis-cli --scan --pattern 'products::*' | xargs redis-cli DEL`. |
 
 ---
 
