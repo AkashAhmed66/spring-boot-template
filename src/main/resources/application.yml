@@ -31,6 +31,28 @@ spring:
     error:
       include-binding-errors: always
       include-message: always
+  # SMTP — provider-agnostic. Any host/port/credentials that speak SMTP will work
+  # (Gmail, Outlook/Office365, Yahoo, SendGrid, Mailgun, Postmark, AWS SES, self-hosted, …).
+  # The defaults below are placeholders so the structure stays self-documenting in source
+  # control. Real credentials live in .env (gitignored) — see .env.example for ready-to-paste
+  # per-provider blocks. Env vars also override in production deployments.
+  mail:
+    host: ${SPRING_MAIL_HOST:smtp.example.com}
+    port: ${SPRING_MAIL_PORT:587}
+    username: ${SPRING_MAIL_USERNAME:your-smtp-username}
+    password: ${SPRING_MAIL_PASSWORD:your-smtp-password}
+    properties:
+      mail:
+        smtp:
+          auth: ${SPRING_MAIL_SMTP_AUTH:true}
+          starttls:
+            enable: ${SPRING_MAIL_SMTP_STARTTLS:true}
+            required: ${SPRING_MAIL_SMTP_STARTTLS_REQUIRED:false}
+          ssl:
+            enable: ${SPRING_MAIL_SMTP_SSL:false}
+          connectiontimeout: ${SPRING_MAIL_SMTP_CONNECT_TIMEOUT_MS:5000}
+          timeout: ${SPRING_MAIL_SMTP_READ_TIMEOUT_MS:10000}
+          writetimeout: ${SPRING_MAIL_SMTP_WRITE_TIMEOUT_MS:10000}
 
 server:
   port: ${SERVER_PORT:8080}
@@ -61,6 +83,25 @@ app:
       issuer: ${APP_SECURITY_JWT_ISSUER:springboot-template}
       access-token-ttl-minutes: ${APP_SECURITY_JWT_ACCESS_TTL_MINUTES:60}
       refresh-token-ttl-days: ${APP_SECURITY_JWT_REFRESH_TTL_DAYS:14}
+    sessions:
+      # How often the cleanup job runs to purge stale session rows.
+      cleanup-interval: ${APP_SECURITY_SESSIONS_CLEANUP_INTERVAL:PT1H}
+      # Rows are kept for this long past their expiry/revocation for audit, then deleted.
+      cleanup-retention: ${APP_SECURITY_SESSIONS_CLEANUP_RETENTION:P7D}
+  mail:
+    # Master switch. Off by default — flip APP_MAIL_ENABLED=true in .env once SMTP creds
+    # are filled in so misconfigured local runs don't silently swallow notifications.
+    enabled: ${APP_MAIL_ENABLED:false}
+    # The visible "From" address. Many providers require this to match the SMTP login.
+    from: ${APP_MAIL_FROM:no-reply@example.com}
+    # Human-readable name shown before the address in mail clients.
+    from-name: ${APP_MAIL_FROM_NAME:Spring Boot Template}
+    # Public base URL used to build links inside templates (e.g. password reset).
+    app-url: ${APP_MAIL_APP_URL:http://localhost:8080}
+    # Password reset tokens expire after this duration.
+    password-reset-ttl: ${APP_MAIL_PASSWORD_RESET_TTL:PT30M}
+    # How often the cleanup job purges expired/consumed password-reset rows.
+    password-reset-cleanup-interval: ${APP_MAIL_PASSWORD_RESET_CLEANUP_INTERVAL:PT1H}
   rate-limit:
     enabled: ${APP_RATE_LIMIT_ENABLED:true}
     capacity: ${APP_RATE_LIMIT_CAPACITY:60}
@@ -104,6 +145,12 @@ app:
       userDetails:
         ttl: PT5M
         max-size: 10000
+      # Session lookups: read on every JWT-authenticated request to verify the issuing
+      # session is still active. Evicted explicitly on revoke/logout so the TTL is just
+      # a safety net for missed evictions (mass revocations bust the whole cache).
+      userSessions:
+        ttl: PT5M
+        max-size: 50000
   idempotency:
     # Master switch: false disables the @Idempotent aspect and the cleanup job.
     enabled: ${APP_IDEMPOTENCY_ENABLED:true}

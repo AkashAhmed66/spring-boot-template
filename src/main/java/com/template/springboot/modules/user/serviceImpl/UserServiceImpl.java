@@ -1,10 +1,12 @@
 package com.template.springboot.modules.user.serviceImpl;
 
+import com.template.springboot.common.exception.BadRequestException;
 import com.template.springboot.common.exception.DuplicateResourceException;
 import com.template.springboot.common.exception.ResourceNotFoundException;
 import com.template.springboot.common.security.SecurityUtils;
 import com.template.springboot.modules.role.entity.Role;
 import com.template.springboot.modules.role.repository.RoleRepository;
+import com.template.springboot.modules.session.service.UserSessionService;
 import com.template.springboot.modules.user.dto.AssignRolesRequest;
 import com.template.springboot.modules.user.dto.UpdateUserRequest;
 import com.template.springboot.modules.user.dto.UserFilter;
@@ -38,6 +40,7 @@ public class UserServiceImpl implements UserService {
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final UserMapper userMapper;
+    private final UserSessionService sessionService;
 
     @Override
     @Transactional(readOnly = true)
@@ -76,7 +79,11 @@ public class UserServiceImpl implements UserService {
                 && userRepository.existsByEmail(request.getEmail())) {
             throw new DuplicateResourceException("Email is already in use");
         }
+        boolean wasEnabled = user.isEnabled();
         userMapper.applyUpdate(request, user);
+        if (wasEnabled && !user.isEnabled()) {
+            sessionService.revokeAllForUser(id, "account-deactivated");
+        }
         return userMapper.toResponse(user);
     }
 
@@ -94,7 +101,54 @@ public class UserServiceImpl implements UserService {
                         .orElseThrow(() -> new ResourceNotFoundException("Role", name)))
                 .collect(Collectors.toCollection(HashSet::new));
         user.setRoles(roles);
+        sessionService.revokeAllForUser(id, "roles-changed");
         return userMapper.toResponse(user);
+    }
+
+    @Override
+    @Transactional
+    @Caching(
+            put = @CachePut(value = USERS_CACHE, key = "#id"),
+            evict = @CacheEvict(value = USER_DETAILS_CACHE, allEntries = true)
+    )
+    public UserResponse activate(Long id) {
+        User user = userRepository.findWithRolesById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("User", id));
+        if (user.isEnabled()) {
+            throw new BadRequestException("User is already active");
+        }
+        user.setEnabled(true);
+        return userMapper.toResponse(user);
+    }
+
+    @Override
+    @Transactional
+    @Caching(
+            put = @CachePut(value = USERS_CACHE, key = "#id"),
+            evict = @CacheEvict(value = USER_DETAILS_CACHE, allEntries = true)
+    )
+    public UserResponse deactivate(Long id) {
+        Long currentUserId = SecurityUtils.getCurrentUserId().orElse(null);
+        if (id.equals(currentUserId)) {
+            throw new BadRequestException("Cannot deactivate your own account");
+        }
+        User user = userRepository.findWithRolesById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("User", id));
+        if (!user.isEnabled()) {
+            throw new BadRequestException("User is already inactive");
+        }
+        user.setEnabled(false);
+        sessionService.revokeAllForUser(id, "account-deactivated");
+        return userMapper.toResponse(user);
+    }
+
+    @Override
+    @Transactional
+    public void forceLogout(Long id) {
+        if (!userRepository.existsById(id)) {
+            throw new ResourceNotFoundException("User", id);
+        }
+        sessionService.revokeAllForUser(id, "admin-force-logout");
     }
 
     @Override
@@ -108,5 +162,6 @@ public class UserServiceImpl implements UserService {
                 .orElseThrow(() -> new ResourceNotFoundException("User", id));
         user.markDeleted(SecurityUtils.getCurrentUsername().orElse("system"));
         userRepository.save(user);
+        sessionService.revokeAllForUser(id, "account-deleted");
     }
 }

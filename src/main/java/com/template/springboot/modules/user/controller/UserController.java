@@ -68,6 +68,28 @@ public class UserController {
         return new ApiResponse(userService.assignRoles(id, request), "Roles assigned");
     }
 
+    @PostMapping("/{id}/activate")
+    @HasPermission(PermissionName.USER_WRITE)
+    @Auditable(action = "USER_ACTIVATE", resourceType = "User", resourceId = "#id")
+    public ApiResponse activate(@PathVariable Long id) {
+        return new ApiResponse(userService.activate(id), "User activated");
+    }
+
+    @PostMapping("/{id}/deactivate")
+    @HasPermission(PermissionName.USER_WRITE)
+    @Auditable(action = "USER_DEACTIVATE", resourceType = "User", resourceId = "#id")
+    public ApiResponse deactivate(@PathVariable Long id) {
+        return new ApiResponse(userService.deactivate(id), "User deactivated");
+    }
+
+    @PostMapping("/{id}/force-logout")
+    @HasPermission(PermissionName.USER_WRITE)
+    @Auditable(action = "USER_FORCE_LOGOUT", resourceType = "User", resourceId = "#id")
+    public ApiResponse forceLogout(@PathVariable Long id) {
+        userService.forceLogout(id);
+        return ApiResponse.message("User signed out from all sessions");
+    }
+
     @DeleteMapping("/{id}")
     @HasPermission(PermissionName.USER_DELETE)
     @Auditable(action = "USER_DELETE", resourceType = "User", resourceId = "#id")

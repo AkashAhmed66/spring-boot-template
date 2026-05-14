@@ -19,5 +19,11 @@ public interface UserService {
 
     UserResponse assignRoles(Long id, AssignRolesRequest request);
 
+    UserResponse activate(Long id);
+
+    UserResponse deactivate(Long id);
+
+    void forceLogout(Long id);
+
     void delete(Long id);
 }

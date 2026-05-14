@@ -47,6 +47,13 @@ public final class SecurityUtils {
                 });
     }
 
+    public static Optional<Long> getCurrentSessionId() {
+        return getCurrentAuthentication()
+                .map(Authentication::getPrincipal)
+                .filter(p -> p instanceof AuthenticatedUser)
+                .map(p -> ((AuthenticatedUser) p).sessionId());
+    }
+
     public static Set<String> getCurrentAuthorities() {
         return getCurrentAuthentication()
                 .map(a -> a.getAuthorities().stream()
@@ -57,6 +64,15 @@ public final class SecurityUtils {
 
     public static boolean hasAuthority(String authority) {
         return getCurrentAuthorities().contains(authority);
+    }
+
+    public static boolean hasAnyAuthority(String... authorities) {
+        if (authorities == null || authorities.length == 0) return false;
+        Set<String> current = getCurrentAuthorities();
+        for (String authority : authorities) {
+            if (current.contains(authority)) return true;
+        }
+        return false;
     }
 
     public static boolean hasRole(String role) {

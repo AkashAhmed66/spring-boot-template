@@ -1,6 +1,6 @@
 # Spring Boot API Template
 
-A reusable Spring Boot 4 / Java 17 starter for building secure REST APIs. Comes pre-wired with JWT authentication, RBAC (roles + permissions), JPA auditing, soft-delete, global exception handling, file uploads, structured logging, OpenAPI docs, Flyway migrations, **DB-backed audit logging**, **per-identity rate limiting**, and **`.env`-driven configuration**.
+A reusable Spring Boot 4 / Java 17 starter for building secure REST APIs. Comes pre-wired with JWT authentication, RBAC (roles + permissions), **per-device sessions with selective revocation**, **admin impersonation**, **user activate/deactivate**, JPA auditing, soft-delete, global exception handling, file uploads, structured logging, OpenAPI docs, Flyway migrations, **DB-backed audit logging**, **per-identity rate limiting**, and **`.env`-driven configuration**.
 
 ---
 
@@ -13,6 +13,10 @@ A reusable Spring Boot 4 / Java 17 starter for building secure REST APIs. Comes 
 6. [Cross-Cutting Concerns](#cross-cutting-concerns)
    - [Authentication (JWT)](#authentication-jwt)
    - [Authorization](#authorization--hasrole--haspermission)
+   - [Admin Override Permissions](#admin-override-permissions)
+   - [Sessions & Multi-Device Logout](#sessions--multi-device-logout)
+   - [User Lifecycle (Active/Inactive, Force-Logout)](#user-lifecycle-activeinactive-force-logout)
+   - [Admin Impersonation](#admin-impersonation)
    - [Current User](#current-user-context)
    - [ApiResponse envelope](#apiresponse-standard-envelope)
    - [Pagination](#pagination--automatic)
@@ -89,7 +93,7 @@ Boot order: spring-dotenv loads `.env` → Flyway applies migrations → Hiberna
 | Username | `admin` |
 | Email | `admin@gmail.com` |
 | Password | `admin123` |
-| Role | `ADMIN` (every permission, including `AUDIT_READ`) |
+| Role | `ADMIN` (every permission, including `AUDIT_READ`, `USER_IMPERSONATE`, `SESSION_READ`, `SESSION_REVOKE`, and the `ADMIN_*` override set) |
 
 **Change these before any non-local deployment.** Override via `.env` or env vars:
 ```bash
@@ -137,7 +141,9 @@ src/main/java/com/template/springboot/
     ├── file/                     generic file upload + serve service
     ├── permission/               entity · enums · repository · dto · mapper · service · serviceImpl · specification · controller
     ├── role/                     same shape as permission
-    ├── user/                     same shape + specification (filtering)
+    ├── user/                     same shape + specification (filtering, activate/deactivate, force-logout)
+    ├── session/                  per-device sessions: entity · repository · service · cleanup job ·
+    │                             admin controller (search/revoke any session)
     └── product/                  full reference module — multipart + image, full CRUD
 ```
 
@@ -339,8 +345,9 @@ That's it. Restart, log in as ADMIN, hit `/api/v1/orders`. Adding a new field la
 ### Authentication (JWT)
 - Every request goes through [JwtAuthenticationFilter.java](src/main/java/com/template/springboot/common/security/JwtAuthenticationFilter.java).
 - Send `Authorization: Bearer <accessToken>` on protected endpoints.
-- The token's `uid` and authorities (roles + permissions) populate `SecurityContext`.
+- The token carries claims `uid` (user id), `sid` (session id), `authorities` (roles + permissions), and optionally `imp` (impersonator id). These populate `SecurityContext`.
 - Tokens are issued by `/api/v1/auth/login`. Refresh via `/api/v1/auth/refresh`. Lifetimes: env-driven, defaults 60 min access / 14 day refresh.
+- **Stateful revocation** — every login creates a row in [`user_sessions`](#sessions--multi-device-logout). The filter validates the session is still active on every request, so revoking a row instantly invalidates every token that carried that `sid`. See [Sessions & Multi-Device Logout](#sessions--multi-device-logout).
 
 ### Authorization — `@HasRole` / `@HasPermission`
 Custom annotations enforced by [AuthorizationAspect.java](src/main/java/com/template/springboot/common/security/AuthorizationAspect.java). No `@PreAuthorize`, no SpEL — just the bare permission/role name.
@@ -352,6 +359,128 @@ Custom annotations enforced by [AuthorizationAspect.java](src/main/java/com/temp
 
 Apply at method or class level (method wins when both present). Fails authentication → 401, fails authorization → 403, both responses are JSON via `GlobalExceptionHandler`.
 
+### Admin Override Permissions
+
+Four coarse permissions in [PermissionName.java](src/main/java/com/template/springboot/modules/permission/enums/PermissionName.java) let an admin **bypass per-record ownership checks** at the service layer:
+
+| Permission | Intent |
+|---|---|
+| `ADMIN_READ` | Read any user-owned resource |
+| `ADMIN_WRITE` | Create resources for any user |
+| `ADMIN_EDIT` | Edit any user-owned resource |
+| `ADMIN_DELETE` | Delete any user-owned resource |
+
+All four are granted to `ADMIN` (V11 migration). They're checked alongside the normal endpoint-level `@HasPermission` annotation — they don't replace it, they **expand the scope** of operations the caller can perform once authorized.
+
+**Pattern — bypass an ownership check:**
+```java
+public UserSession requireOwnedBy(Long sessionId, Long userId) {
+    UserSession session = repository.findById(sessionId)
+            .orElseThrow(() -> new ResourceNotFoundException("Session", sessionId));
+    if (SecurityUtils.hasAnyAuthority(PermissionName.ADMIN_ANY)) {
+        return session;                         // admin sees anyone's
+    }
+    if (!Objects.equals(session.getUserId(), userId)) {
+        throw new ResourceNotFoundException("Session", sessionId);
+    }
+    return session;
+}
+```
+
+`PermissionName.ADMIN_ANY` is a `String[]` of all four constants — use it with the new `SecurityUtils.hasAnyAuthority(String...)` helper.
+
+**Pattern — admin sees the whole table on a user-facing list:**
+```java
+public List<SessionResponse> listMySessions() {
+    Long userId = currentUser.getId();
+    Long currentSessionId = SecurityUtils.getCurrentSessionId().orElse(null);
+    if (SecurityUtils.hasAnyAuthority(PermissionName.ADMIN_ANY)) {
+        return sessionService.listAllActive(currentSessionId);   // every user's sessions
+    }
+    return sessionService.listForUser(userId, currentSessionId);  // just my own
+}
+```
+
+Same endpoint, same DTO shape, scope determined by the caller's authorities. Errors stay opaque to non-admins — we throw `ResourceNotFoundException` (404) rather than `AccessDeniedException` (403), so users can't probe which session ids exist.
+
+### Sessions & Multi-Device Logout
+
+Every successful login (and `register`, and admin `impersonate`) inserts one row into [`user_sessions`](src/main/resources/db/migration/V9__user_sessions.sql) and embeds that row's id in the JWT as the `sid` claim. The auth filter validates the session is still active on every request, so revoking a row logs out **exactly one device** without touching the others.
+
+**What's stored per session:**
+- `user_id`, optional `impersonator_id` (set when an admin issued the session via `/auth/impersonate/{userId}`)
+- `device_name` (optional, client-supplied), `user_agent`, `ip_address` — captured from `HttpServletRequest`
+- `issued_at`, `last_used_at` (touched on refresh), `expires_at` (= refresh-token expiry)
+- `revoked_at`, `revoked_reason` (`user-logout`, `admin-force-logout`, `account-deactivated`, `roles-changed`, etc.)
+
+**Hot-path performance** — every authenticated request looks up the session by id. Cached in the `userSessions` Caffeine cache (5 min TTL, 50k entries). Revoke calls explicitly evict; mass revocations clear `allEntries`. The cleanup job ([UserSessionCleanupJob.java](src/main/java/com/template/springboot/modules/session/job/UserSessionCleanupJob.java)) hourly deletes rows past `expires_at` or revoked more than 7 days ago.
+
+**User-facing endpoints** ([AuthController.java](src/main/java/com/template/springboot/modules/auth/controller/AuthController.java)):
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/api/v1/auth/login` | Body may include `deviceName` to label the session; `User-Agent` + IP captured automatically |
+| `POST` | `/api/v1/auth/logout` | Revoke only **this** device's session |
+| `POST` | `/api/v1/auth/logout-all` | Revoke every active session for the caller |
+| `GET`  | `/api/v1/auth/sessions` | List my active sessions (admin sees **all** users' sessions — see [Admin Override Permissions](#admin-override-permissions)) |
+| `DELETE` | `/api/v1/auth/sessions/{id}` | Revoke one specific session — must belong to me, unless I have an `ADMIN_*` perm |
+
+`SessionResponse` carries `id`, `userId`, `deviceName`, `userAgent`, `ipAddress`, `issuedAt`, `lastUsedAt`, `expiresAt`, `revokedAt`, `revokedReason`, `impersonatorId`, and `current` (true on the row matching the caller's `sid`).
+
+**Admin endpoints** ([AdminSessionController.java](src/main/java/com/template/springboot/modules/session/controller/AdminSessionController.java)):
+
+| Method | Path | Permission | Purpose |
+|---|---|---|---|
+| `GET`  | `/api/v1/admin/sessions?userId=&active=&q=` | `SESSION_READ` | Paginated cross-user search (filter on user, active state, or free-text against `deviceName`/`userAgent`/`ipAddress`) |
+| `GET`  | `/api/v1/admin/sessions/{id}` | `SESSION_READ` | Inspect any single session |
+| `DELETE` | `/api/v1/admin/sessions/{id}` | `SESSION_REVOKE` | Revoke a specific session with `revoked_reason='admin-revoked'` |
+
+**Programmatic revocation** — any of these service calls cascades to session revocation with a descriptive reason:
+
+| Caller | Reason set on `revoked_at` rows |
+|---|---|
+| `AuthService.logout()` | `user-logout` |
+| `AuthService.logoutAll()` | `user-logout-all` |
+| `AuthService.revokeSession(id)` | `user-revoked-device` |
+| `UserService.deactivate(id)` / `update` flipping `enabled=false` | `account-deactivated` |
+| `UserService.forceLogout(id)` | `admin-force-logout` |
+| `UserService.assignRoles(id, ...)` | `roles-changed` |
+| `UserService.delete(id)` | `account-deleted` |
+
+Configure cleanup behavior in `.env`:
+```bash
+APP_SECURITY_SESSIONS_CLEANUP_INTERVAL=PT1H     # how often the purge job runs
+APP_SECURITY_SESSIONS_CLEANUP_RETENTION=P7D     # rows kept after expiry/revocation for forensics
+```
+
+### User Lifecycle (Active/Inactive, Force-Logout)
+
+[UserController.java](src/main/java/com/template/springboot/modules/user/controller/UserController.java) exposes administrative lifecycle operations. Login and refresh both reject deactivated accounts with `"Account is deactivated"`.
+
+| Method | Path | Permission | Effect |
+|---|---|---|---|
+| `POST` | `/api/v1/users/{id}/activate` | `USER_WRITE` | Sets `enabled=true`. Pre-existing sessions stay revoked. |
+| `POST` | `/api/v1/users/{id}/deactivate` | `USER_WRITE` | Sets `enabled=false` **and** revokes every session for that user. Refuses to act on the caller's own account. |
+| `POST` | `/api/v1/users/{id}/force-logout` | `USER_WRITE` | Revokes every session without changing `enabled`. Useful after a suspected token leak. |
+
+`PUT /api/v1/users/{id}` also accepts `enabled` and will cascade-revoke sessions when toggling `true → false`. Use the dedicated endpoints in new code — they audit-log cleanly and have stricter precondition checks.
+
+### Admin Impersonation
+
+Lets an admin sign in **as another user** without their password. Useful for support: an admin can reproduce a user's exact view of the system. The issued tokens carry an `imp` claim (admin's user id) so the audit trail attributes actions to the right person.
+
+```http
+POST /api/v1/auth/impersonate/{userId}
+Authorization: Bearer <admin-access-token>
+```
+
+Returns a normal `AuthResponse` with new `accessToken` and `refreshToken` scoped to the target user. The session row records both `user_id` (target) and `impersonator_id` (admin), so it's distinguishable from a real login on `GET /auth/sessions`.
+
+- Gated by `USER_IMPERSONATE` permission (granted to `ADMIN` in V8).
+- Refuses to impersonate yourself or a deactivated account.
+- `Auditable(action="AUTH_IMPERSONATE")` writes the admin's identity and the target's id to `audit_logs`.
+- The impersonation session is a normal row in `user_sessions` — the admin can revoke it from `GET /auth/sessions` like any other device, and the cleanup job purges it on expiry.
+
 ### Current user context
 Two ergonomic options that share the same `SecurityContextHolder` source:
 
@@ -360,8 +489,10 @@ Two ergonomic options that share the same `SecurityContextHolder` source:
 SecurityUtils.getCurrentUserId()        // Optional<Long>
 SecurityUtils.getCurrentUsername()      // Optional<String>
 SecurityUtils.getCurrentUserDetails()   // Optional<CustomUserDetails>
+SecurityUtils.getCurrentSessionId()     // Optional<Long> — sid claim from current JWT
 SecurityUtils.getCurrentAuthorities()   // Set<String>
 SecurityUtils.hasAuthority("X")
+SecurityUtils.hasAnyAuthority("X", "Y") // OR-match — pair with PermissionName.ADMIN_ANY
 SecurityUtils.hasRole("ADMIN")
 ```
 
@@ -578,6 +709,7 @@ Spring's `@Cacheable` / `@CachePut` / `@CacheEvict` abstraction is wired in. The
 | `roles`        | `RoleServiceImpl` — `getById`                                           | 1h   | 500 | `update` / `assignPermissions` / `delete` (and evict all `userDetails`)      |
 | `permissions`  | `PermissionServiceImpl` — `getById`                                     | 1h   | 500 | `update` / `delete` (and evict all `roles` + all `userDetails`)              |
 | `userDetails`  | `CustomUserDetailsService.loadUserByUsername` — **every auth'd request** | 5m   | 10k | Any user/role/permission mutation (broad eviction keeps RBAC correct)        |
+| `userSessions` | `UserSessionService.findContext` — **every auth'd request** (validates `sid`) | 5m | 50k | Explicit on `revoke` / `revokeAllForUser` (`allEntries` for bulk)             |
 
 **Cross-cache eviction strategy:** RBAC changes (a role gaining a permission, a user being reassigned) evict all `userDetails` entries — we don't know which usernames are affected, and authorization correctness wins over hit rate.
 
@@ -651,13 +783,15 @@ Every value in [application.yml](src/main/resources/application.yml) is `${VAR:d
 | `FLYWAY_BASELINE_ON_MIGRATE` | `true` | First run on existing DB won't fail |
 | `FLYWAY_LOCATIONS` | `classpath:db/migration` | Migration folder |
 
-### JWT
+### JWT & Sessions
 | Variable | Default | Purpose |
 |---|---|---|
 | `APP_SECURITY_JWT_SECRET` | placeholder | **Override in prod**: `openssl rand -base64 32` |
 | `APP_SECURITY_JWT_ISSUER` | `springboot-template` | JWT `iss` |
 | `APP_SECURITY_JWT_ACCESS_TTL_MINUTES` | `60` | Access token lifetime |
-| `APP_SECURITY_JWT_REFRESH_TTL_DAYS` | `14` | Refresh token lifetime |
+| `APP_SECURITY_JWT_REFRESH_TTL_DAYS` | `14` | Refresh token lifetime + session row `expires_at` |
+| `APP_SECURITY_SESSIONS_CLEANUP_INTERVAL` | `PT1H` | How often the cleanup job purges stale session rows |
+| `APP_SECURITY_SESSIONS_CLEANUP_RETENTION` | `P7D` | How long expired/revoked sessions are kept past their end for forensics |
 
 ### File storage
 | Variable | Default | Purpose |
@@ -741,12 +875,23 @@ APP_RATE_LIMIT_AUTH_CAPACITY=5
 | `POST` | `/api/v1/auth/register` | public | — |
 | `POST` | `/api/v1/auth/login` | public | — |
 | `POST` | `/api/v1/auth/refresh` | public | — |
+| `POST` | `/api/v1/auth/logout` | yes | — (current session) |
+| `POST` | `/api/v1/auth/logout-all` | yes | — (all caller's sessions) |
+| `GET`  | `/api/v1/auth/sessions` | yes | — (admin sees all via `ADMIN_*`) |
+| `DELETE` | `/api/v1/auth/sessions/{id}` | yes | — (own session, or `ADMIN_*`) |
+| `POST` | `/api/v1/auth/impersonate/{userId}` | yes | `USER_IMPERSONATE` |
 | `GET`  | `/api/v1/users/me` | yes | — |
 | `GET`  | `/api/v1/users` | yes | `USER_READ` |
 | `GET`  | `/api/v1/users/{id}` | yes | `USER_READ` |
 | `PUT`  | `/api/v1/users/{id}` | yes | `USER_WRITE` |
 | `POST` | `/api/v1/users/{id}/roles` | yes | `ROLE_WRITE` |
+| `POST` | `/api/v1/users/{id}/activate` | yes | `USER_WRITE` |
+| `POST` | `/api/v1/users/{id}/deactivate` | yes | `USER_WRITE` |
+| `POST` | `/api/v1/users/{id}/force-logout` | yes | `USER_WRITE` |
 | `DELETE` | `/api/v1/users/{id}` | yes | `USER_DELETE` |
+| `GET`  | `/api/v1/admin/sessions` | yes | `SESSION_READ` |
+| `GET`  | `/api/v1/admin/sessions/{id}` | yes | `SESSION_READ` |
+| `DELETE` | `/api/v1/admin/sessions/{id}` | yes | `SESSION_REVOKE` |
 | `GET`  | `/api/v1/roles` | yes | `ROLE_READ` |
 | `POST` | `/api/v1/roles` | yes | `ROLE_WRITE` |
 | `GET`  | `/api/v1/roles/{id}` | yes | `ROLE_READ` |
@@ -784,6 +929,11 @@ Existing migrations:
 - `V4__product_image_url.sql` — adds `image_url` column to products
 - `V5__soft_delete_columns.sql` — adds `deleted_at` / `deleted_by` to all audited tables
 - `V6__audit_logs.sql` — `audit_logs` table + `AUDIT_READ` permission for ADMIN
+- `V7__idempotency_records.sql` — `idempotency_records` table for dedupe of retried non-idempotent requests
+- `V8__user_token_version_and_impersonate.sql` — `USER_IMPERSONATE` permission (the `token_version` column it added is later dropped by V9)
+- `V9__user_sessions.sql` — drops `users.token_version`, creates `user_sessions` table
+- `V10__session_admin_permissions.sql` — `SESSION_READ` + `SESSION_REVOKE` permissions for ADMIN
+- `V11__admin_permissions.sql` — `ADMIN_READ` / `ADMIN_WRITE` / `ADMIN_EDIT` / `ADMIN_DELETE` for ADMIN
 
 To inspect what's been applied:
 ```sql
@@ -1011,7 +1161,7 @@ You should see `X-RateLimit-Remaining` count down and a `429` after `APP_RATE_LI
 
 So you know when to add them:
 
-- **Refresh-token rotation / revocation table** — refresh tokens are stateless. Add a `revoked_tokens` table if you need server-side invalidation.
+- **Refresh-token rotation** — refresh tokens stay constant across refresh calls (same `sid`, same content). Add per-refresh rotation if you want refresh-token-reuse detection on top of session revocation.
 - **Account lockout on failed login** — rate limiting blunts credential stuffing, but a per-user lockout counter is a separate concern.
 - **Email / password reset** — `spring-boot-starter-mail` + a `PasswordResetToken` table aren't wired.
 - **Cluster-safe rate limiter** — current rate limiter is in-memory. Swap to `bucket4j-redis` for multi-instance. (The **cache** abstraction is already cluster-safe — flip to Redis per [Switching Cache to Redis](#switching-cache-to-redis).)

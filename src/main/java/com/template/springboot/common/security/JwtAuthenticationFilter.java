@@ -1,5 +1,7 @@
 package com.template.springboot.common.security;
 
+import com.template.springboot.modules.session.dto.SessionContext;
+import com.template.springboot.modules.session.service.UserSessionService;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
@@ -18,6 +20,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Objects;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -28,9 +31,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtService jwtService;
+    private final UserSessionService userSessionService;
 
-    public JwtAuthenticationFilter(JwtService jwtService) {
+    public JwtAuthenticationFilter(JwtService jwtService, UserSessionService userSessionService) {
         this.jwtService = jwtService;
+        this.userSessionService = userSessionService;
     }
 
     @Override
@@ -41,21 +46,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (token != null && SecurityContextHolder.getContext().getAuthentication() == null) {
             try {
                 Claims claims = jwtService.parse(token);
-                if (!jwtService.isAccessToken(claims)) {
-                    String reason = "Refresh token cannot be used to authenticate API calls — use the access token";
-                    log.warn("Rejected non-access token at {} {}", request.getMethod(), request.getRequestURI());
-                    request.setAttribute(AUTH_FAILURE_REASON, reason);
+                String rejection = validate(claims);
+                if (rejection != null) {
+                    log.warn("Rejected token at {} {} — {}", request.getMethod(), request.getRequestURI(), rejection);
+                    request.setAttribute(AUTH_FAILURE_REASON, rejection);
                 } else {
-                    List<SimpleGrantedAuthority> authorities = jwtService.extractAuthorities(claims).stream()
-                            .map(SimpleGrantedAuthority::new)
-                            .toList();
-                    Number uid = claims.get("uid", Number.class);
-                    Long userId = uid != null ? uid.longValue() : null;
-                    AuthenticatedUser principal = new AuthenticatedUser(userId, claims.getSubject());
-                    UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
-                            principal, null, authorities);
-                    auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                    SecurityContextHolder.getContext().setAuthentication(auth);
+                    authenticate(claims, request);
                 }
             } catch (JwtException ex) {
                 String reason = ex.getClass().getSimpleName() + ": " + ex.getMessage();
@@ -65,6 +61,43 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
         }
         chain.doFilter(request, response);
+    }
+
+    private String validate(Claims claims) {
+        if (!jwtService.isAccessToken(claims)) {
+            return "Refresh token cannot be used to authenticate API calls — use the access token";
+        }
+        Long userId = jwtService.extractUserId(claims);
+        Long sessionId = jwtService.extractSessionId(claims);
+        if (userId == null || sessionId == null) {
+            return "Token is missing required claims";
+        }
+        SessionContext session = userSessionService.findContext(sessionId);
+        if (session == null) {
+            return "Session no longer exists";
+        }
+        if (!Objects.equals(session.userId(), userId)) {
+            return "Session does not belong to this user";
+        }
+        if (!session.isActive()) {
+            return session.revokedAt() != null ? "Session has been revoked" : "Session has expired";
+        }
+        return null;
+    }
+
+    private void authenticate(Claims claims, HttpServletRequest request) {
+        List<SimpleGrantedAuthority> authorities = jwtService.extractAuthorities(claims).stream()
+                .map(SimpleGrantedAuthority::new)
+                .toList();
+        AuthenticatedUser principal = new AuthenticatedUser(
+                jwtService.extractUserId(claims),
+                claims.getSubject(),
+                jwtService.extractSessionId(claims),
+                jwtService.extractImpersonatedBy(claims));
+        UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
+                principal, null, authorities);
+        auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+        SecurityContextHolder.getContext().setAuthentication(auth);
     }
 
     private String extractToken(HttpServletRequest request) {

@@ -29,8 +29,15 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 @EnableConfigurationProperties(JwtProperties.class)
 class SecurityConfig {
 
+    private static final String[] PUBLIC_AUTH_PATHS = {
+            "/api/v1/auth/register",
+            "/api/v1/auth/login",
+            "/api/v1/auth/refresh",
+            "/api/v1/auth/forgot-password",
+            "/api/v1/auth/reset-password"
+    };
+
     private static final String[] PUBLIC_PATHS = {
-            "/api/v1/auth/**",
             "/api/v1/public/**",
             "/v3/api-docs/**",
             "/swagger-ui.html",
@@ -83,6 +90,7 @@ class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/files/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, PUBLIC_AUTH_PATHS).permitAll()
                         .requestMatchers(PUBLIC_PATHS).permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
